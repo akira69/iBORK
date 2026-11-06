@@ -24,7 +24,7 @@ test("settings tabs preserve model drafts and copy the MCP configuration", async
   await settings.locator("summary").click();
   const model = settings.getByRole("tab", { name: "Model connection" });
   await expect(model).toHaveAttribute("aria-selected", "true");
-  await settings.getByLabel("Model ID").fill("test-model");
+  await settings.getByLabel("Default model ID").fill("test-model");
   await settings.screenshot({
     path: "test-results/screenshots/assistant-settings.png",
   });
@@ -37,7 +37,7 @@ test("settings tabs preserve model drafts and copy the MCP configuration", async
   await expect(
     settings.getByRole("tab", { name: "Discovery scope" }),
   ).toBeFocused();
-  await expect(settings.getByLabel("Model ID")).toBeHidden();
+  await expect(settings.getByLabel("Default model ID")).toBeHidden();
   await page.keyboard.press("End");
   await expect(settings.getByLabel("MCP JSON")).toBeVisible();
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -52,5 +52,7 @@ test("settings tabs preserve model drafts and copy the MCP configuration", async
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
   await model.click();
-  await expect(settings.getByLabel("Model ID")).toHaveValue("test-model");
+  await expect(settings.getByLabel("Default model ID")).toHaveValue(
+    "test-model",
+  );
 });

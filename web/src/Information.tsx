@@ -75,7 +75,11 @@ export function Information({ emptyFleet = false }: { emptyFleet?: boolean }) {
     <article className="information" aria-label="iBORK usage guide">
       <header className="guide-cover">
         <div className="guide-intro">
-          <h2>{intro.title}</h2>
+          <h2 className="guide-brand">
+            <img src="/ibork.svg" alt="" width="64" height="64" />
+            iBORK
+          </h2>
+          <p className="guide-subtitle">{intro.title}</p>
           {paragraphs(intro.lead)}
           <div className="guide-shortcuts">
             {emptyFleet && (

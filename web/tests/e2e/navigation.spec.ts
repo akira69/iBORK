@@ -10,7 +10,10 @@ test("fresh visits show the shared guide with credits, above Settings and on mob
   ).toBeVisible();
   const guide = page.getByRole("article", { name: "iBORK usage guide" });
   await expect(
-    guide.getByRole("heading", { name: "Operator handbook" }),
+    guide.getByRole("heading", { name: "iBORK", level: 2, exact: true }),
+  ).toBeVisible();
+  await expect(
+    guide.getByText("Operator handbook", { exact: true }),
   ).toBeVisible();
   await expect(
     guide.getByRole("heading", { name: "Dashboard layouts" }),

@@ -6,7 +6,13 @@ import {
   useState,
   useLayoutEffect,
 } from "react";
-import { Cable, Network, SlidersHorizontal } from "lucide-react";
+import {
+  ArrowUp,
+  Cable,
+  Network,
+  SlidersHorizontal,
+  Square,
+} from "lucide-react";
 import { CopyButton } from "./CopyButton";
 import { createPortal } from "react-dom";
 import { ReviewedConnection } from "./ConnectionSettings";
@@ -42,13 +48,13 @@ type Turn = {
 export default function Assistant({
   csrf,
   host,
-  link,
+  settingsRequest,
   opened,
   onLayout,
 }: {
   csrf: string;
   host: HTMLDivElement | null;
-  link?: { section: SettingsSection; request: number };
+  settingsRequest: number;
   opened: boolean;
   onLayout?: (id: string) => void;
 }) {
@@ -60,6 +66,9 @@ export default function Assistant({
     hasKey: false,
   });
   const [revision, setRevision] = useState("");
+  const [models, setModels] = useState<string[]>([]);
+  const [modelOverride, setModelOverride] = useState("");
+  const [pending, setPending] = useState("");
   const [message, setMessage] = useState(""),
     [chat, setChat] = useState<{ question: string; result: Turn }[]>([]);
   const [note, setNote] = useState(""),
@@ -69,11 +78,12 @@ export default function Assistant({
   const active = useRef<AbortController | null>(null);
   const lastLink = useRef(0);
   const transcript = useRef<HTMLDivElement>(null);
+  const composer = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
-    if (!host || !link || lastLink.current === link.request) return;
+    if (!host || lastLink.current === settingsRequest) return;
     const outer = host.closest("details");
     const section = host.querySelector<HTMLButtonElement>(
-      `[data-section="${link.section}"]`,
+      '[data-section="provider"]',
     );
     if (!outer) return;
     outer.open = true;
@@ -81,15 +91,32 @@ export default function Assistant({
       outer.querySelector("summary")?.focus();
       return;
     }
-    lastLink.current = link.request;
+    lastLink.current = settingsRequest;
     section.click();
     section.focus();
     section.scrollIntoView({ block: "center" });
-  }, [host, link, status]);
+  }, [host, settingsRequest, status]);
   useEffect(() => {
     if (opened && transcript.current)
       transcript.current.scrollTop = transcript.current.scrollHeight;
-  }, [chat, opened]);
+  }, [chat, pending, opened]);
+  useEffect(() => {
+    if (!savedModel.model) return;
+    const controller = new AbortController();
+    api<{ models: string[] }>("assistant/models", {
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
+    })
+      .then(({ models }) => models ?? [])
+      .catch((): string[] => [])
+      .then((available) => {
+        if (controller.signal.aborted) return;
+        setModels(available);
+        setModelOverride((current) =>
+          available.includes(current) ? current : "",
+        );
+      });
+    return () => controller.abort();
+  }, [savedModel]);
   async function refreshStatus(signal: AbortSignal) {
     const s = await api<Status>("assistant/status", {
       signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
@@ -120,15 +147,19 @@ export default function Assistant({
             : [],
         ),
       );
-      setRevision(s.revision);
-      setSavedModel({ base: s.baseUrl, model: s.model, hasKey: s.hasKey });
+      changeRevision(s.revision);
     }
+    setSavedModel({ base: s.baseUrl, model: s.model, hasKey: s.hasKey });
   }
   const loadStatus = useEffectEvent(() => {
     if (!status || opened) void run(refreshStatus);
   });
   useEffect(() => {
     loadStatus();
+    if (!opened) return;
+    const onFocus = () => loadStatus();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [opened]);
   useEffect(() => () => active.current?.abort(), []);
   const retryStatus = !status && note && (
@@ -169,7 +200,41 @@ export default function Assistant({
     setPreview(undefined);
     setReviewing(false);
   }
+  function changeRevision(rev: string) {
+    setRevision(rev);
+    setModels([]);
+    setModelOverride("");
+  }
   const canSend = !!message.trim() && !!status && !!savedModel.model && !busy;
+  function send() {
+    if (!canSend) return;
+    const draft = message;
+    const question = draft.trim();
+    void run(async (signal) => {
+      setPending(question);
+      setMessage("");
+      composer.current?.focus();
+      try {
+        const result = await post<Turn>(
+          "chat",
+          {
+            message: question,
+            language: navigator.language,
+            revision,
+            model: modelOverride || undefined,
+          },
+          signal,
+        );
+        update(result.state);
+        setChat((old) => [...old.slice(-19), { question, result }]);
+      } catch (error) {
+        setMessage((current) => current || draft);
+        throw error;
+      } finally {
+        setPending("");
+      }
+    });
+  }
   return (
     <>
       {host &&
@@ -178,6 +243,7 @@ export default function Assistant({
             <AssistantSettings
               key={revision}
               provider={savedModel}
+              models={models}
               approvedScope={status.scope}
               busy={busy}
               feedback={busy ? t.busy : note}
@@ -185,8 +251,8 @@ export default function Assistant({
               run={run}
               post={post}
               onProvider={(provider, rev) => {
-                setRevision(rev);
                 setSavedModel(provider);
+                changeRevision(rev);
                 setChat([]);
               }}
               onScope={(next) => {
@@ -209,42 +275,53 @@ export default function Assistant({
         aria-label={t.chat}
         tabIndex={0}
       >
-        <p>{t.privacy}</p>
         {retryStatus}
-        {status && !savedModel.model && <p>{t.setupModel}</p>}
-        {savedModel.model && (
-          <p>
-            {t.provider}: {savedModel.model} · {savedModel.base}
-          </p>
-        )}
-        <details>
-          <summary>{t.suggest}</summary>
-          {[t.find, t.pairKvm, t.status, t.tidy, t.sync].map((label, i) => (
-            <button key={label} onClick={() => setMessage(t.prompts[i])}>
-              {label}
-            </button>
-          ))}
-        </details>
+        {status &&
+          !chat.length &&
+          !pending &&
+          !status.draft &&
+          !status.layout &&
+          !status.candidates?.length && (
+            <div
+              className="assistant-prompts"
+              role="group"
+              aria-label={t.suggest}
+            >
+              <h3>{t.promptHeading}</h3>
+              {[t.find, t.pairKvm, t.status, t.tidy, t.sync].map((label, i) => (
+                <button
+                  key={label}
+                  onClick={() => {
+                    setMessage(t.prompts[i]);
+                    composer.current?.focus();
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         <div role="log" aria-label={t.chat}>
-          {chat.map(({ question, result }, i) => (
+          {(pending
+            ? [...chat, { question: pending, result: null }]
+            : chat
+          ).map(({ question, result }, i) => (
             <div className="assistant-turn" key={i}>
-              <strong>{question}</strong>
-              {result.activity?.map((a, j) => (
+              <p className="assistant-question">{question}</p>
+              {result?.activity?.map((a, j) => (
                 <code key={j}>
                   {a.name}
                   {a.failed ? " ×" : " ✓"}
                 </code>
               ))}
-              <p>{result.reply || result.error}</p>
+              {result ? (
+                <p>{result.reply || result.error}</p>
+              ) : (
+                <p className="assistant-working">{t.busy}</p>
+              )}
             </div>
           ))}
         </div>
-        <button
-          disabled={busy || !status}
-          onClick={() => void run(refreshStatus)}
-        >
-          {t.refresh}
-        </button>
         {!!status?.candidates?.length && (
           <ul>
             {status.candidates.map((c) => (
@@ -331,48 +408,80 @@ export default function Assistant({
           </section>
         )}
       </div>
-      <div className="assistant-composer assistant-body">
+      <div className="assistant-composer">
+        <p role="status">{!status && busy ? t.checking : note}</p>
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            const question = message.trim();
-            if (!canSend) return;
-            void run(async (signal) => {
-              const result = await post<Turn>(
-                "chat",
-                { message: question, language: navigator.language, revision },
-                signal,
-              );
-              update(result.state);
-              setChat((old) => [...old.slice(-19), { question, result }]);
-              setMessage((current) =>
-                current.trim() === question ? "" : current,
-              );
-            });
+            send();
           }}
         >
-          <label>
-            {t.question}
-            <textarea
-              maxLength={2000}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-            />
-          </label>
-          <button disabled={!canSend}>{t.send}</button>
-          {busy && (
-            <button
-              type="button"
-              onClick={() => {
-                active.current?.abort();
-                setNote(t.stopped);
-              }}
+          <textarea
+            ref={composer}
+            aria-label={t.question}
+            placeholder={
+              status && !savedModel.model ? t.setupModel : t.placeholder
+            }
+            rows={2}
+            maxLength={2000}
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={(e) => {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
+                e.preventDefault();
+                send();
+              }
+            }}
+          />
+          <div className="assistant-toolbar">
+            <select
+              aria-label={t.chatModel}
+              disabled={!savedModel.model || busy}
+              value={modelOverride || savedModel.model}
+              onChange={(e) =>
+                setModelOverride(
+                  e.target.value === savedModel.model ? "" : e.target.value,
+                )
+              }
             >
-              {t.stop}
-            </button>
-          )}
+              <option value={savedModel.model}>
+                {savedModel.model || t.noModel}
+              </option>
+              {models
+                .filter((id) => id !== savedModel.model)
+                .map((id) => (
+                  <option key={id}>{id}</option>
+                ))}
+            </select>
+            {pending ? (
+              <button
+                type="button"
+                aria-label={t.stop}
+                title={t.stop}
+                onClick={(event) => {
+                  event.preventDefault();
+                  active.current?.abort();
+                  setNote(t.stopped);
+                }}
+              >
+                <Square size={14} fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                aria-label={t.send}
+                title={t.send}
+                disabled={!canSend}
+              >
+                <ArrowUp size={19} />
+              </button>
+            )}
+          </div>
         </form>
-        <p role="status">{busy ? t.busy : note}</p>
       </div>
     </>
   );
@@ -380,6 +489,7 @@ export default function Assistant({
 
 function AssistantSettings({
   provider,
+  models,
   approvedScope,
   busy,
   feedback,
@@ -390,6 +500,7 @@ function AssistantSettings({
   onScope,
 }: {
   provider: { base: string; model: string; hasKey: boolean };
+  models: string[];
   approvedScope: string;
   busy: boolean;
   feedback: string;
@@ -485,7 +596,16 @@ function AssistantSettings({
           </label>
           <label>
             {t.model}
-            <input value={model} onChange={(e) => setModel(e.target.value)} />
+            <input
+              list={base === provider.base ? prefix + "models" : undefined}
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+            />
+            <datalist id={prefix + "models"}>
+              {models.map((id) => (
+                <option key={id} value={id} />
+              ))}
+            </datalist>
           </label>
           <label>
             {t.key}

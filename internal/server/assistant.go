@@ -73,6 +73,22 @@ func (s *Server) serveAssistant(w http.ResponseWriter, r *http.Request, sess *se
 	defer cancel()
 	stop := context.AfterFunc(sess.ctx, cancel)
 	defer stop()
+	if r.Method == "GET" && action == "models" {
+		p, _ := s.modelProvider()
+		if p.BaseURL == "" {
+			fail(w, 400, "Configure a model first")
+			return
+		}
+		catalogCtx, end := context.WithTimeout(ctx, 5*time.Second)
+		defer end()
+		models, err := p.Models(catalogCtx)
+		if err != nil {
+			fail(w, 502, err.Error())
+			return
+		}
+		reply(w, 200, map[string][]string{"models": models})
+		return
+	}
 	a := &sess.assistant
 	if action == "revoke" && r.Method == "POST" {
 		s.unpair(a)
@@ -170,7 +186,10 @@ func (s *Server) serveAssistant(w http.ResponseWriter, r *http.Request, sess *se
 		s.mu.Unlock()
 		reply(w, 200, map[string]any{"token": secret, "expires": a.activeUntil})
 	case "chat":
-		var input struct{ Message, Language, Revision string }
+		var input struct {
+			Message, Language, Revision string
+			Model                       json.RawMessage
+		}
 		if !decode(w, r, &input) {
 			return
 		}
@@ -186,6 +205,14 @@ func (s *Server) serveAssistant(w http.ResponseWriter, r *http.Request, sess *se
 		if input.Revision != revision {
 			fail(w, 409, "Model connection changed. Reopen the assistant before sending.")
 			return
+		}
+		if input.Model != nil {
+			var model string
+			if json.Unmarshal(input.Model, &model) != nil || !assistant.ValidModelID(model) {
+				fail(w, 400, "Invalid model ID")
+				return
+			}
+			p.Model = model
 		}
 		if a.historyProvider != revision {
 			a.history = nil

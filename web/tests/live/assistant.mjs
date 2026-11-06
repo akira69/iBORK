@@ -12,8 +12,11 @@ try {
     viewport: { width: 390, height: 844 },
   });
   let toolRequests = 0;
+  let chatRequests = 0;
   page.on("request", (r) => {
-    if (new URL(r.url()).pathname.startsWith("/api/assistant/")) toolRequests++;
+    const path = new URL(r.url()).pathname;
+    if (path.startsWith("/api/assistant/")) toolRequests++;
+    if (path === "/api/assistant/chat") chatRequests++;
   });
   await page.goto(env.IBORK_TEST_ORIGIN);
   await page.getByLabel("Management password").fill(env.IBORK_TEST_PASSWORD);
@@ -24,11 +27,11 @@ try {
   await expect(drawer).toBeHidden();
   expect(toolRequests).toBe(0);
   await launcher.click();
-  await drawer.getByRole("button", { name: "Model connection" }).click();
+  await drawer.getByRole("button", { name: "Assistant settings" }).click();
   await expect(page.getByRole("heading", { name: "Add server" })).toBeVisible();
   await expect(drawer).toBeHidden();
   await page.getByLabel("OpenAI-compatible endpoint").fill(fixture.baseUrl);
-  await page.getByLabel("Model ID").fill(fixture.model);
+  await page.getByLabel("Default model ID").fill(fixture.model);
   if (fixture.key)
     await page.getByLabel("API key (optional)").fill(fixture.key);
   await page.getByRole("button", { name: "Test & save model" }).click();
@@ -41,14 +44,12 @@ try {
     .locator(".connection-settings")
     .getByRole("button", { name: "iBORK Assistant" })
     .click();
-  await page
-    .locator("summary")
-    .filter({ hasText: "Suggested questions" })
-    .click();
-  const before = toolRequests;
-  await page.getByRole("button", { name: "Check my setup" }).click();
+  await expect(
+    drawer.getByRole("combobox", { name: "Chat model" }),
+  ).toHaveValue(fixture.model);
+  await drawer.getByRole("button", { name: "Check my setup" }).click();
   await expect(page.getByLabel("Your question")).toHaveValue(/setup_status/);
-  expect(toolRequests).toBe(before);
+  expect(chatRequests).toBe(0);
   const response = page.waitForResponse(
     (r) => new URL(r.url()).pathname === "/api/assistant/chat",
     { timeout: 62000 },
@@ -57,15 +58,14 @@ try {
   const turn = await (await response).json();
   expect(turn.error).toBeUndefined();
   expect(turn.reply.trim().length).toBeGreaterThan(0);
-  await expect(
-    page.locator(".assistant-turn code").filter({ hasText: "setup_status ✓" }),
-  ).toBeVisible({ timeout: 62000 });
-  await expect(page.locator(".assistant-turn p")).not.toBeEmpty();
+  const log = drawer.getByRole("log");
+  await expect(log).toContainText("setup_status ✓");
+  await expect(log.getByText(turn.reply, { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(drawer).toBeHidden();
   await page.getByLabel("Switch server").selectOption("vault");
   await launcher.click();
-  await expect(page.locator(".assistant-turn")).toHaveCount(1);
+  await expect(log.getByText(turn.reply, { exact: true })).toBeVisible();
   const followUp = page.waitForResponse(
     (r) => new URL(r.url()).pathname === "/api/assistant/chat",
     { timeout: 62000 },
@@ -74,13 +74,12 @@ try {
     .getByLabel("Your question")
     .fill("In one short sentence, what was my last question about?");
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(page.locator(".assistant-turn")).toHaveCount(2, {
-    timeout: 62000,
-  });
   const follow = await (await followUp).json();
   expect(follow.error).toBeUndefined();
   expect(follow.reply.trim().length).toBeGreaterThan(0);
-  await expect(page.locator(".assistant-turn p").last()).not.toBeEmpty();
+  await expect(
+    log.getByText(follow.reply, { exact: true }).last(),
+  ).toBeVisible();
   const target = "jet-supermicro:dashboard:v1:192.0.2.2:623";
   await page.evaluate((target) => {
     const widget = { id: "health", kind: "health", x: 0, y: 0, w: 4, h: 3 };
