@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -52,8 +51,9 @@ func (s *profileStore) Save(input server.DeviceSettings) error {
 	if input.Name == "" || len(input.Name) > 100 {
 		return errors.New("enter a device name")
 	}
+	host, hostErr := normalizedHost(input.Host)
 	if input.Host != "" {
-		if (net.ParseIP(input.Host) == nil && !hostnamePattern.MatchString(input.Host)) || len(input.Host) > 253 || input.Port < 1 || input.Port > 65535 || input.Username == "" || len(input.Username) > 16 {
+		if hostErr != nil || input.Port < 1 || input.Port > 65535 || input.Username == "" || len(input.Username) > 16 {
 			return errors.New("enter a valid BMC host, port and username")
 		}
 	} else if input.Port != 0 || input.Username != "" || input.Password != nil || input.KGKey != nil {
@@ -94,6 +94,10 @@ func (s *profileStore) Save(input server.DeviceSettings) error {
 	p := deviceProfile{}
 	if index >= 0 {
 		p = s.profiles[index]
+		// DCMI history uses the saved host spelling as part of its directory key.
+		if savedHost, err := normalizedHost(p.Host); err == nil && savedHost == host {
+			input.Host = p.Host
+		}
 	}
 	if err := applyTelemetry(&p, input); err != nil {
 		return err

@@ -1,83 +1,133 @@
-## Welcome to iBORK
+## Operator handbook
 
-iBORK brings server management and remote consoles into one workspace. Use it to view a server's display, operate its keyboard and mouse, check health and power usage, and manage supported hardware. Standalone KVM connections work without IPMI management.
+Connect to a server, follow its power draw, or ask the iBORK Assistant to help set up your fleet.
 
-A fresh visit opens this information page. After that, iBORK remembers your last page and selected server in this browser, including KVM Wall and settings. Sign in when prompted to return to that page. Clearing browser data or using a different browser or app address starts fresh. If a saved server is removed, iBORK returns here.
+## Getting around
 
-## Find your way around
+### Choose a server
 
-Choose a server icon in the left column to open its Console. The tabs across the workspace show the tools available for that server. Choose KVM Wall for multiple consoles, the book icon for this guide, or the gear for iBORK settings. On a small screen, these app buttons move to the top bar.
+Select a server in the left rail to see its tools. A standalone KVM provides a console. A management connection adds hardware controls. **KVM Wall** brings multiple servers into one view. On small screens, the wall, guide and settings buttons move to the top bar.
 
-iBORK settings contains shared preferences, Add server, sidebar shortcuts, the electricity rate and sign-in security. Server settings contains connections, credentials, appearance and console options for the selected server. Saving a connection reloads the app, reconnects devices and preserves your sign-in.
+### Find the right settings
 
-## Use a remote console
+Open **iBORK settings** for Add server, sidebar shortcuts, the shared electricity rate and sign-in security. Open **Server settings** for the selected machine’s connections, credentials, appearance and console options. Saving a connection reloads the app and reconnects your devices.
 
-Open a server's Console and connect if needed. Auto-connect can be changed in Server settings. Click the display to control it; Shift+Escape releases keyboard control. Fullscreen gives the console more room. Connection status distinguishes the KVM connection from IPMI management, so one can be available while the other is offline.
+### Pick up where you left off
 
-KVM Wall brings saved consoles together. Use its settings to choose entries and connection options. Connect a tile, hover over its display to direct keyboard input, or click to enlarge it. Use Back to wall to return. Disconnect when you are finished; switching pages does not replace an explicit disconnect for sessions that remain open.
-
-## View power across servers
-
-In KVM Wall, Power Overview lists every configured server with its power source and sample age. The measured total adds one fresh whole-machine reading per reporting server. A measured 0 W counts. A missing reading, collection error or sample older than 150 seconds reduces coverage. For example, two readings of 80 W and 120 W plus an unmetered server show 200 W and 2 of 3 reporting.
-
-Open Central Dashboard and choose Edit layout to add a widget. Choose one server for a sensor or power reading, or choose Combined power and check the servers to include. Last hour charts cover only intervals where every selected server has measurements at most 150 seconds apart. Energy and cost use those same intervals and the electricity rate in iBORK settings. Groups can overlap across widgets.
-
-The Wall remembers its last view. Opening a telemetry view starts no console sessions. The Central Dashboard layout is saved separately in this browser. Use the title bar and size controls on a wider screen to arrange its widgets.
-
-## Use the iBORK touchscreen display
-
-The current firmware supports the Elecrow CrowPanel DIS08070H V3.0 in 800 × 480 landscape. Another display of this size can reuse the layout once it has a driver for its screen, touch input, and backlight.
-
-On the display, the Wi-Fi icon turns green when the panel joins the network. The server connection icon turns green after iBORK supplies fresh readings. Red identifies which connection needs attention.
-
-The overview shows fleet watts, estimated cost for measured energy, and reporting coverage for 24 hours and 30 days. Set the shared USD/kWh rate in **iBORK settings → Electricity cost** and save it. All dashboards and paired panels use that rate. The initial rate is $0.20/kWh. A panel picks up edits on its next successful telemetry poll. Older servers omit the rate, so an updated panel shows watts and kWh with cost unavailable. Up to 12 server tiles fit below the charts. Each shows an icon, short label, watts and a chevron. Tap a tile for details or swipe up for additional servers. In **iBORK settings → Remote display → Display settings**, choose **Copy sidebar icons to panel** to send the short labels and cropped artwork from this browser. Repeat after changing the sidebar icons.
-
-Edit the shared daily schedule in **iBORK settings → Remote display → Display settings** or on the touchscreen under **Settings → Display schedule**. Set four start times in the panel's local time. Each period runs until the next start, including across midnight. Normal uses full brightness, Dim accepts 1–99%, and Screen off turns off the backlight while telemetry continues. The defaults are Screen off at 1 AM, Dim at 5 AM, Normal at 7 AM and Dim at 7 PM, with both dim periods at 25%. The first touch wakes the panel and consumes the tap. Five minutes after the last touch it resumes the schedule. A paired panel requires its PIN to save and reads web edits on the next successful poll.
-
-In **iBORK settings → Remote display**, use **Home** to show, hide or reorder fleet power, the 24-hour and 30-day charts, and server tiles. Choose which servers appear and their order. Home totals, history and cost cover the included servers. The browser sidebar has its own visibility settings.
-
-Use **Servers** to choose the sections for each server dashboard. The editor offers watts for a configured meter, temperature and fan readings for IPMI or Glances, and PIN-protected controls for a supported management connection. A metered outlet can provide watts alongside either sensor source. Remote display shows the time of the latest authenticated panel request. It marks the connection stale after one minute. The preview uses the most recent panel readings and shows gaps for missing measurements. Choose the preview palette to match the color selected on your touchscreen. Choose **Save layout** to apply your edits to paired panels on their next successful refresh.
-
-On the touchscreen, tap a tile or use the server selector in the fixed top bar. The selector works even when Home has no server tiles. Opening a dashboard requests sensor readings for that server. A missing reading stays unavailable, and the panel continues to show connection status when offline. Before the first customization, the panel includes every server. Afterward, choose any newly added servers in the web editor.
-
-Tap the gear beside Finch13 for Wi-Fi setup or Change power PIN. To change the PIN, enter the current PIN and then a new 6–12 digit PIN. The change applies to all panels paired with this iBORK server. Power on and graceful shutdown require the panel PIN and confirmation of the target. If the connection drops after submitting a command, check the server before issuing it again.
-
-## Arrange your workspace
-
-Use Edit layout to add, remove, move or resize widgets, then choose Done. While editing, drag a widget's title bar or use arrow keys on a focused title bar to move it. Resize with its corner or size controls. Layouts, display names, sidebar shortcuts and other browser preferences stay in this browser.
-
-## Monitor and manage servers
-
-For a machine without IPMI, choose iBORK settings → Add server → Telemetry server. Enter the Glances origin that the iBORK service can reach. Use HTTPS with a certificate trusted by the iBORK host, or a tunnel that listens on the iBORK host's loopback interface. iBORK reads the Glances v4 sensors endpoint. The Sensors tab shows the temperatures and fan RPM supplied by the host.
-
-Choose Connect Glances over SSH beside the origin field to generate a tunnel setup command. Run it on the iBORK host, then follow its prompt in the Glances server's root terminal. After it verifies the sensors, choose Use tunnel origin and save. For an existing tunnel, enter its local port and use the origin directly.
-
-To add whole-machine watts, connect only that machine to a metered outlet and select its power source in Server connection. Use one physical outlet ID across protocols. For MQTT outlet, enter the broker, exact status topic and the top-level numeric JSON field measured in watts (default watts). Grant the account permission to subscribe to that topic. For Matter via Home Assistant, pair the plug in Home Assistant and enter its HTTPS origin, bearer token and instantaneous power sensor entity in iBORK. The sensor must report W or kW. A switch or a cumulative kWh reading cannot supply live watts. iBORK stores the samples with its local 30-day power history.
-
-On an IPMI server, Sensors shows readings from the BMC unless a Glances source is configured. Events shows the BMC event log, and Inventory shows reported hardware information. Cooling displays available temperatures, fan speeds and supported controls. Check device and connection status if a reading is unavailable.
-
-Power usage shows current consumption, sampled history, measured energy and estimated cost using the electricity rate in iBORK settings. Gaps and partial coverage affect totals, and forecasts are estimates rather than a billing record.
-
-Power controls can start, shut down, reset or cycle a server. Boot selects a one-time boot target. Read the confirmation before applying a change. If a hardware action times out, refresh and check the server before trying again: it may already have happened.
-
-## Terminals and virtual media
-
-Terminals provides Serial-over-LAN and read-only IPMI diagnostics where management is available. Connect SOL explicitly and disconnect when finished. Diagnostics accepts supported commands such as help, power status, sensor list, inventory and events; it is not a shell on the server.
-
-On supported JetKVM connections, virtual media can mount an HTTP or HTTPS ISO URL reachable by the device. The source must support byte-range requests. Check media status and eject when finished. Local ISO upload is not available.
-
-## Connection help
-
-If a console is blank, check whether the KVM is connected and whether the server is sending a video signal. Check the selected server's connection settings, credentials and device reachability. A KVM-only entry has console tools without IPMI sensors, power or SOL.
-
-Use iBORK on your trusted management network or VPN. Sign out when finished, especially on a shared browser. Saved page preferences contain only navigation choices; they do not bypass sign-in or store your passwords.
+After your first visit, this browser remembers your last server and page. Sign in to return there. Clearing browser data, using a different app address or removing the selected server brings you back to this guide.
 
 ## iBORK Assistant
 
-Open the brain tab on the right edge of any signed-in page to chat. Add server also opens this drawer. For model, discovery scope and MCP settings, follow the settings link in the drawer. Under Model connection, enter an OpenAI-compatible /v1 endpoint and a tool-capable model ID, then choose Test & save model. Your messages, server names and device findings go to that provider. Suggested questions fill the message box so you can edit them before sending.
+Open the brain icon at the right edge of any signed-in page to chat. The **iBORK Assistant** button under **Add server** opens the same drawer. Ask it to find devices, pair a KVM or rearrange a Console dashboard. The links at the top of the drawer open the matching tab in **Assistant settings**.
 
-To find devices, approve private IPv4 addresses or a subnet of up to 256 addresses under Discovery scope. Review a proposed server, enter its credentials in the connection form, and choose Verify, save & reconnect. Checks read BMC power status and check JetKVM access. A quiet device can still be added manually.
+### Chat with a model
 
-To use your own agent, open Connect my agent (MCP) on the HTTPS site. Copy the configuration, create a temporary token, and enter it in your client's secret settings. An approved network enables discovery. Without one the agent can still read server names and propose layouts. Use Refresh proposals to review your agent's work. Changing scope, revoking the token or signing out ends its access.
+In **Assistant settings → Model**, enter an OpenAI-compatible `/v1` endpoint and a model ID that supports tool calls. Choose **Test & save model**. Your messages, server names and device findings go to that provider. Enter device passwords in the connection form. **Suggested questions** fills in a prompt you can edit before choosing **Send**.
 
-Ask the assistant to tidy one server's Console dashboard or copy the panel arrangement from one server to another. Preview shows the destination and proposed positions. Apply to this browser saves the arrangement for that server. Existing widgets and sensor selections belong to the destination. Repeat for additional servers.
+### Discover and verify devices
+
+In **Assistant settings → Discovery**, approve private IPv4 addresses or a subnet of up to 256 addresses. Try **Find my devices** or **Pair a KVM**. Review the proposed server and its physical pairing, enter credentials in the form, then choose **Verify, save & reconnect**. Verification checks BMC power status or JetKVM access as applicable. You can add a quiet device manually.
+
+### Connect your own agent
+
+On the HTTPS site, open **Assistant settings → MCP**. Copy the client configuration and put the temporary token in your client’s secret settings. Tokens expire within 15 minutes. Discovery requires an approved network. Your agent can read server names and propose layouts without one. Choose **Refresh proposals** to review its work. Changing scope, revoking the token or signing out ends access.
+
+### Preview a layout
+
+Try **Tidy my dashboard** to close gaps, or **Copy a layout** to copy panel positions and sizes between servers. Review the destination in the preview. **Apply to this browser** saves the arrangement. The destination keeps its widgets and sensor selections.
+
+## Remote consoles
+
+### Control one machine
+
+Open **Console** and connect. To change auto-connect, open **Server settings**. Click the display to send keyboard and mouse input. Press `Shift+Escape` to release the keyboard or use **Fullscreen** for more room. The KVM and IPMI indicators report each connection separately.
+
+### Work from the wall
+
+Use **KVM Wall** settings to choose consoles and connection options. Connect a tile and hover over its display to direct keyboard input. Click to enlarge it and choose **Back to wall** to return. Disconnect explicitly when you finish a session.
+
+## Power and energy
+
+### Read fleet coverage
+
+Open **KVM Wall → Power Overview** to see each server’s power source and sample age. The total counts one whole-machine reading per server, including 0 W. If two servers report 80 W and 120 W while a third has no meter, you’ll see **200 W · 2 of 3 reporting**. A collection error or a sample older than 150 seconds reduces coverage.
+
+### Compare a group
+
+In **Central Dashboard → Edit layout**, add a power or sensor widget for one server, or choose **Combined power** and select a group. Last-hour charts count intervals where every selected server has readings at most 150 seconds apart. Energy and estimated cost cover those same intervals. Different widgets can use overlapping groups.
+
+### Estimate cost
+
+Set the shared USD/kWh rate in **iBORK settings → Electricity cost**. The initial rate is $0.20/kWh. **Power usage** shows measured history, energy and estimated cost for one server. Check coverage before using a forecast. Opening a telemetry view starts no console sessions.
+
+## Dashboard layouts
+
+Use **Edit layout** to add or remove widgets. Drag a title bar, or focus it and use the arrow keys to move the widget. Resize with the corner or size controls, then choose **Done**.
+
+The Central Dashboard has its own layout. Arrange its widgets on a wider screen. Layouts, display names and sidebar shortcuts are saved in this browser. KVM Wall also remembers its last view.
+
+## Sensors and management
+
+### Connect Glances
+
+For a host without IPMI, choose **iBORK settings → Add server → Telemetry server**. Enter a Glances origin the service can reach over trusted HTTPS or a tunnel on the iBORK host’s loopback interface. **Sensors** reads temperatures and fan speeds from the Glances v4 sensors endpoint.
+
+Expand **Connect Glances over SSH** and enter the server address and a free local port. Copy **Start setup** into a root terminal on the iBORK host. Paste its public pairing line into the guide, then copy each command in the Glances server section into that server’s root terminal. Paste its public host key into the waiting iBORK terminal. Once the sensor check succeeds, choose **Use tunnel origin** and save. For an existing tunnel, enter its local port directly.
+
+### Add a power meter
+
+Connect just the measured machine to the outlet. In **Server connection**, select its power source. Use the same physical outlet ID across protocols. iBORK keeps 30 days of local power history.
+
+For **MQTT outlet**, enter the broker, exact status topic and top-level numeric watts field (default `watts`). The account needs subscribe access to that topic. For **Matter via Home Assistant**, pair the plug there and supply its HTTPS origin, bearer token and instantaneous power sensor entity. Select a sensor that reports W or kW.
+
+### Inspect hardware and issue commands
+
+Open **Sensors** for temperatures and fan speeds. On managed servers the readings come from the BMC unless Glances is configured. **Cooling** shows the current firmware fan mode on supported boards. Use **Events** for the BMC log and **Inventory** for reported hardware details.
+
+Power controls can start, shut down, reset or cycle the server. **Boot** sets a one-time boot target. Confirm the target before applying. If a command times out, **check the server before retrying**. The first request may already have taken effect.
+
+## Touchscreen display
+
+### Read the panel
+
+The Elecrow CrowPanel DIS08070H V3.0 uses an 800 × 480 landscape layout. A green Wi-Fi icon means the panel joined the network. A green server icon means fresh iBORK readings arrived. A red icon identifies the connection to check.
+
+Home shows fleet watts, estimated cost and reporting coverage over 24 hours and 30 days. Up to 12 server tiles show a short label and watts. Tap a tile for details, swipe up for more servers, or use the top-bar selector even when Home has no tiles. Opening a server requests fresh readings.
+
+### Choose what appears
+
+In **iBORK settings → Remote display → Home**, show, hide or reorder fleet power, charts and tiles. Totals and cost cover the servers you include. Initially all servers are included. After customizing, add new servers in the editor.
+
+Under **Servers**, choose watts for a configured meter, temperatures and fans for IPMI or Glances, and PIN-protected controls for supported management connections. The preview uses the latest panel readings and leaves gaps where measurements are missing. Remote display shows when the panel last checked in and marks the connection stale after one minute. Select the preview palette that matches your touchscreen. Choose **Save layout** for paired panels to pick up changes on refresh.
+
+In **Remote display → Display settings**, use **Copy sidebar icons to panel** after editing browser labels or artwork. Paired panels also pick up the shared electricity rate on their next successful poll. With an older server, the panel can show watts and kWh while cost is unavailable.
+
+### Schedule the backlight
+
+Use **iBORK settings → Remote display → Display settings** or **Settings → Display schedule** on the panel. Set four local start times. Each period runs until the next, including across midnight. Normal uses full brightness, Dim accepts 1–99%, and Screen off keeps telemetry running with the backlight off.
+
+The default schedule turns the screen off at 1 AM, dims to 25% at 5 AM, returns to full brightness at 7 AM and dims to 25% at 7 PM. The first touch wakes the screen and consumes the tap. The schedule resumes after five idle minutes. A paired panel requires its PIN to save schedule changes.
+
+### Protect power actions
+
+Tap the gear beside Finch13 for Wi-Fi setup or **Change power PIN**. Enter the current PIN and a new 6–12 digit PIN. The new PIN applies to every panel paired with this iBORK server. Power on and graceful shutdown require the PIN and target confirmation. If the connection drops after submission, check the server before sending another command.
+
+## Terminals and media
+
+### Open a terminal
+
+**Terminals** offers Serial-over-LAN and read-only IPMI diagnostics on supported management connections. Connect SOL explicitly and disconnect when finished. Diagnostics accepts commands such as `help`, `power status`, `sensor list`, `inventory` and `events`.
+
+### Mount an ISO
+
+On a supported JetKVM connection, supply an HTTP or HTTPS ISO URL the device can reach. The source must support byte-range requests. Check media status after mounting and eject when finished. Host the ISO on a reachable server to use a local image.
+
+## Connection help
+
+### Blank console
+
+Check the KVM connection, then check for a video signal from the server. Confirm the credentials and address in **Server settings**. On a KVM-only entry, console tools are available independently of IPMI sensors, power controls and SOL.
+
+### Shared browser
+
+Use your trusted management network or VPN. Sign out when finished. Browser preferences remember your last page and selected server. Returning to the workspace still requires a valid sign-in.

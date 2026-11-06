@@ -181,3 +181,31 @@ test("wall packs real 4:3 displays, connects all, and reset preserves clients an
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
 });
+
+test("a removed console stays disconnected when its dashboard reopens", async ({
+  page,
+}) => {
+  await setup(page, true, true, false, true);
+  await expect(
+    page.getByRole("button", { name: "Disconnect console", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Edit layout", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Remove JetKVM", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Sensors", exact: true }).click();
+  await page.getByRole("button", { name: "Console", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Done", exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("region", { name: "At a glance widget" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { telemetry: { peers: number } }).telemetry.peers,
+    ),
+  ).toBe(0);
+});

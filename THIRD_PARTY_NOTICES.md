@@ -49,6 +49,8 @@ by GPL-2.0. Dependency licenses also apply; consult package lock and module file
 
 ## Branding assets
 
+- `web/src/assets/glances.svg` is the [official Glances logo](https://github.com/nicolargo/glances/blob/2370cba56c4652c4b68a822db4c70e83a88a9eac/docs/_static/Glances%20Logo.svg), bundled for the Glances connection guide.
+
 - `web/src/assets/assistant-brain.png`: the operator-supplied AI brain artwork, bundled locally for the optional assistant.
 
 - `web/src/assets/jetkvm.svg`: unchanged official `ui/src/assets/logo-white.svg`

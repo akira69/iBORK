@@ -107,7 +107,7 @@ func (p *ipmiProvider) newClient() (*client.Client, error) {
 }
 
 // Each operation owns a session; a failed authentication cannot poison later requests.
-func (p *ipmiProvider) run(ctx context.Context, op func(context.Context, *client.Client) error) error {
+func (p *ipmiProvider) run(ctx context.Context, privilege types.PrivilegeLevel, op func(context.Context, *client.Client) error) error {
 	ctx, cancel := context.WithTimeout(ctx, p.config.Timeout)
 	defer cancel()
 	select {
@@ -125,7 +125,7 @@ func (p *ipmiProvider) run(ctx context.Context, op func(context.Context, *client
 		defer done()
 		_ = c.Close(closeCtx)
 	}()
-	err = p.connect(ctx, c)
+	err = p.connect(ctx, c.WithMaxPrivilegeLevel(privilege))
 	if err == nil {
 		err = op(ctx, c)
 	}
@@ -143,7 +143,7 @@ func (p *ipmiProvider) run(ctx context.Context, op func(context.Context, *client
 	return errors.New("BMC operation failed; check connectivity, credentials and privileges")
 }
 func (p *ipmiProvider) Power(ctx context.Context) (out PowerState, err error) {
-	err = p.run(ctx, func(ctx context.Context, c *client.Client) error {
+	err = p.run(ctx, types.PrivilegeLevelUser, func(ctx context.Context, c *client.Client) error {
 		r, e := c.GetChassisStatus(ctx)
 		if e != nil {
 			return e
@@ -219,7 +219,7 @@ func sensorView(s *types.Sensor) Sensor {
 }
 func (p *ipmiProvider) Sensors(ctx context.Context) (out []Sensor, err error) {
 	out = []Sensor{}
-	err = p.run(ctx, func(ctx context.Context, c *client.Client) error {
+	err = p.run(ctx, types.PrivilegeLevelUser, func(ctx context.Context, c *client.Client) error {
 		var e error
 		out, e = readSensors(ctx, c)
 		return e
@@ -242,7 +242,7 @@ func fruFields(f *types.FRU) map[string]string {
 }
 func (p *ipmiProvider) Inventory(ctx context.Context) (out Inventory, err error) {
 	out.Fields = map[string]string{}
-	err = p.run(ctx, func(ctx context.Context, c *client.Client) error {
+	err = p.run(ctx, types.PrivilegeLevelUser, func(ctx context.Context, c *client.Client) error {
 		d, e := c.GetDeviceID(ctx)
 		if e != nil {
 			return e
@@ -280,7 +280,7 @@ func eventView(s *types.SEL) Event {
 }
 func (p *ipmiProvider) Events(ctx context.Context) (out []Event, err error) {
 	out = []Event{}
-	err = p.run(ctx, func(ctx context.Context, c *client.Client) error {
+	err = p.run(ctx, types.PrivilegeLevelUser, func(ctx context.Context, c *client.Client) error {
 		info, e := c.GetSELInfo(ctx)
 		if e != nil {
 			return e
@@ -306,14 +306,14 @@ func (p *ipmiProvider) SetPower(ctx context.Context, action string) error {
 	if !ok {
 		return errors.New("unsupported power action")
 	}
-	return p.run(ctx, func(ctx context.Context, c *client.Client) error { _, e := c.ChassisControl(ctx, a); return e })
+	return p.run(ctx, types.PrivilegeLevelAdministrator, func(ctx context.Context, c *client.Client) error { _, e := c.ChassisControl(ctx, a); return e })
 }
 func (p *ipmiProvider) SetBoot(ctx context.Context, device string) error {
 	d, ok := map[string]types.BootDeviceSelector{"default": types.BootDeviceSelectorNoOverride, "bios": types.BootDeviceSelectorForceBIOSSetup, "pxe": types.BootDeviceSelectorForcePXE, "disk": types.BootDeviceSelectorForceHardDrive, "cdrom": types.BootDeviceSelectorForceCDROM}[device]
 	if !ok {
 		return errors.New("unsupported boot device")
 	}
-	return p.run(ctx, func(ctx context.Context, c *client.Client) error {
+	return p.run(ctx, types.PrivilegeLevelAdministrator, func(ctx context.Context, c *client.Client) error {
 		flags := &types.BootOptionParam_BootFlags{}
 		if e := c.GetSystemBootOptionsParamFor(ctx, flags); e != nil {
 			return e
@@ -322,7 +322,7 @@ func (p *ipmiProvider) SetBoot(ctx context.Context, device string) error {
 	})
 }
 func (p *ipmiProvider) ClearEvents(ctx context.Context) error {
-	return p.run(ctx, func(ctx context.Context, c *client.Client) error {
+	return p.run(ctx, types.PrivilegeLevelAdministrator, func(ctx context.Context, c *client.Client) error {
 		r, e := c.ReserveSEL(ctx)
 		if e != nil {
 			return e

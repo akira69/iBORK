@@ -46,7 +46,7 @@ func TestUnknownStandardSEL(t *testing.T) {
 	}
 }
 
-func fixtureBMC(t *testing.T) (Provider, *mock.HAL) {
+func fixtureBMC(t *testing.T, privilege bmc.PrivilegeLevel) (Provider, *mock.HAL) {
 	t.Helper()
 	h := mock.New()
 	b := bmc.New(bmc.DeviceInfo{IPMIVersion: 0x20}, [16]byte{}, h)
@@ -56,7 +56,7 @@ func fixtureBMC(t *testing.T) (Provider, *mock.HAL) {
 	}
 	admin.SetPassword([]byte("secret"))
 	admin.Enabled = true
-	admin.ChannelAccess[1] = bmc.UserChannelAccess{MaxPrivilege: bmc.PrivilegeLevelAdministrator, Enabled: true}
+	admin.ChannelAccess[1] = bmc.UserChannelAccess{MaxPrivilege: privilege, Enabled: true}
 	reg := handlers.NewRegistry()
 	handlers.RegisterAllHandlers(reg)
 	reg.RegisterFunc(types.CommandGetSELInfo, func(context.Context, *handlers.HandlerContext, []byte) ([]byte, types.CompletionCode, error) {
@@ -105,14 +105,20 @@ func fixtureBMC(t *testing.T) (Provider, *mock.HAL) {
 	return p, h
 }
 func TestEmptySELCommand(t *testing.T) {
-	p, _ := fixtureBMC(t)
+	p, _ := fixtureBMC(t, bmc.PrivilegeLevelUser)
+	if _, err := p.Power(context.Background()); err != nil {
+		t.Fatalf("read-only account cannot read power: %v", err)
+	}
+	if err := p.SetPower(context.Background(), "on"); err == nil {
+		t.Fatal("read-only account admitted a power action")
+	}
 	events, e := p.Events(context.Background())
 	if e != nil || events == nil || len(events) != 0 {
 		t.Fatalf("empty log: %v %v", events, e)
 	}
 }
 func TestClearSELCommands(t *testing.T) {
-	p, _ := fixtureBMC(t)
+	p, _ := fixtureBMC(t, bmc.PrivilegeLevelAdministrator)
 	if err := p.ClearEvents(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +128,7 @@ func TestClearSELCommands(t *testing.T) {
 	}
 }
 func TestPowerAndBootCommands(t *testing.T) {
-	p, h := fixtureBMC(t)
+	p, h := fixtureBMC(t, bmc.PrivilegeLevelAdministrator)
 	for _, action := range []string{"on", "off", "soft", "reset", "cycle"} {
 		if e := p.SetPower(context.Background(), action); e != nil {
 			t.Fatalf("%s: %v", action, e)

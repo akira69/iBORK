@@ -2,6 +2,9 @@
 const en = {
   title: "iBORK Assistant",
   settings: "Assistant settings",
+  shortTabs: { provider: "Model", scope: "Discovery", connect: "MCP" },
+  copyConfig: "Copy MCP configuration",
+  copyToken: "Copy temporary token",
   retry: "Retry loading assistant",
   close: "Close assistant",
   intro: "Optional help with devices and dashboard layouts.",
@@ -69,6 +72,9 @@ const es: typeof en = {
   setupModel:
     "Abre los ajustes del modelo para configurar un proveedor antes de enviar tu primera pregunta.",
   settings: "Ajustes del asistente",
+  shortTabs: { provider: "Modelo", scope: "Red", connect: "MCP" },
+  copyConfig: "Copiar configuración MCP",
+  copyToken: "Copiar token temporal",
   retry: "Volver a cargar el asistente",
   close: "Cerrar asistente",
   intro: "Ayuda opcional con dispositivos y paneles.",

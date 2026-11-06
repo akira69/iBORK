@@ -84,6 +84,23 @@ it("round trips only navigation choices", () => {
   expect(JSON.parse(values.get(navigationKey))).toEqual(saved);
 });
 
+it("opens a guide link from a saved wall and clears the fragment when leaving", () => {
+  const saved = { deviceId: "second", tab: "Console", view: "wall" } as const;
+  vi.stubGlobal("localStorage", {
+    getItem: () => JSON.stringify(saved),
+    setItem: vi.fn(),
+  });
+  vi.stubGlobal(
+    "location",
+    new URL("https://example.test/app?lang=en#guide-ibork-assistant"),
+  );
+  const replaceState = vi.fn();
+  vi.stubGlobal("history", { state: null, replaceState });
+  expect(readNavigation(devices)).toEqual({ ...fallback, deviceId: "second" });
+  writeNavigation(saved);
+  expect(replaceState).toHaveBeenCalledWith(null, "", "/app?lang=en");
+});
+
 it("does not restore management-only tabs for a standalone KVM", () => {
   vi.stubGlobal("localStorage", {
     getItem: () =>

@@ -4,7 +4,7 @@ COPY web/package*.json ./
 RUN npm ci
 COPY web/ ./
 COPY docs/usage.md /src/docs/usage.md
-COPY deploy/glances-tunnel.sh /src/deploy/glances-tunnel.sh
+COPY deploy/glances-authorize.sh /src/deploy/glances-authorize.sh
 RUN npm run build
 
 FROM golang:1.27-bookworm AS backend

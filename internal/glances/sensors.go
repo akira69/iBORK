@@ -68,6 +68,7 @@ func (c *Client) Sensors(ctx context.Context) ([]management.Sensor, error) {
 		return nil, errors.New("expected Glances sensor array")
 	}
 	out := make([]management.Sensor, 0, len(rows))
+	counts := make(map[string]int)
 	for _, r := range rows {
 		s := management.Sensor{ID: r.Type + ":" + r.Label, Name: r.Label, State: "unavailable", Value: "Unavailable", Warning: r.Warning, Critical: r.Critical}
 		switch {
@@ -96,7 +97,14 @@ func (c *Client) Sensors(ctx context.Context) ([]management.Sensor, error) {
 				}
 			}
 		}
+		counts[s.ID]++
 		out = append(out, s)
+	}
+	for i := range out {
+		// Identical labels can belong to different chips. Keep all readings but withhold ambiguous widget IDs.
+		if counts[out[i].ID] > 1 {
+			out[i].ID = ""
+		}
 	}
 	return out, nil
 }

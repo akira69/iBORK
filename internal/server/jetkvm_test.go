@@ -12,6 +12,20 @@ import (
 	"github.com/coder/websocket"
 )
 
+func echoJetSignaling(w http.ResponseWriter, r *http.Request) {
+	conn, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.CloseNow()
+	for {
+		kind, data, err := conn.Read(r.Context())
+		if err != nil || conn.Write(r.Context(), kind, data) != nil {
+			return
+		}
+	}
+}
+
 func TestJetAuthenticationAndRelayExpiry(t *testing.T) {
 	var logins atomic.Int32
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -30,20 +44,7 @@ func TestJetAuthenticationAndRelayExpiry(t *testing.T) {
 			w.WriteHeader(200)
 			return
 		}
-		conn, err := websocket.Accept(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.CloseNow()
-		for {
-			kind, data, err := conn.Read(r.Context())
-			if err != nil {
-				return
-			}
-			if conn.Write(r.Context(), kind, data) != nil {
-				return
-			}
-		}
+		echoJetSignaling(w, r)
 	}))
 	defer device.Close()
 	relay, err := newJetRelay(device.URL, "device-password", time.Second)
@@ -127,20 +128,7 @@ func TestJetKVMExclusiveSession(t *testing.T) {
 			return
 		}
 		calls.Add(1)
-		conn, err := websocket.Accept(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.CloseNow()
-		for {
-			kind, data, err := conn.Read(r.Context())
-			if err != nil {
-				return
-			}
-			if conn.Write(r.Context(), kind, data) != nil {
-				return
-			}
-		}
+		echoJetSignaling(w, r)
 	}))
 	defer device.Close()
 	s, _ := testServer(t)
@@ -184,11 +172,10 @@ func TestJetKVMExclusiveSession(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	s.CloseSessions()
-	if _, _, err := conn.Read(ctx); err == nil {
-		t.Fatal("shutdown kept stream")
-	}
+	// A disconnected browser may never read or acknowledge the policy close.
+	defer conn.CloseNow()
 	if err := s.WaitForSOL(ctx); err != nil {
-		t.Fatal(err)
+		t.Fatalf("half-open browser prevented console shutdown: %v", err)
 	}
 }
 

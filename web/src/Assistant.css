@@ -131,3 +131,121 @@
 .assistant-settings .assistant-body {
   padding-top: 0.7rem;
 }
+.assistant-settings {
+  min-width: 0;
+  background: linear-gradient(115deg, #1c302e, #182428);
+  border-color: #39574f;
+}
+.assistant-settings > summary {
+  color: #dae9e2;
+  font-size: 1rem;
+}
+.assistant-settings [role="tabpanel"] {
+  padding-top: 10px;
+  border-top: 1px solid #344c44;
+}
+.assistant-settings h3 {
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+}
+.assistant-settings p {
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: #b9caca;
+}
+.assistant-settings label {
+  display: block;
+  font-size: 0.83rem;
+}
+.assistant-settings input,
+.assistant-settings textarea {
+  font-family: inherit;
+  margin: 4px 0 8px;
+  padding: 8px;
+}
+.assistant-settings .assistant-copy textarea,
+.assistant-copy input {
+  font:
+    0.8rem/1.4 Consolas,
+    monospace;
+}
+.assistant-settings .assistant-body button {
+  padding: 6px 9px;
+  margin: 0 4px 0 0;
+}
+.assistant-tabs button svg,
+.copy-action svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.assistant-settings [role="status"]:empty {
+  display: none;
+}
+.glances-setup summary {
+  cursor: pointer;
+  color: #d9e9e3;
+  font-weight: 600;
+}
+.glances-setup summary img {
+  vertical-align: middle;
+  object-fit: contain;
+  margin: 0 5px;
+}
+.assistant-tabs {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 7px;
+  background: #111d20;
+  width: fit-content;
+  max-width: 100%;
+}
+.assistant-tabs button {
+  background: transparent;
+  border-color: transparent;
+  color: #b7c8c9;
+}
+.assistant-tabs button[aria-selected="true"] {
+  background: #29423d;
+  color: #b3eed9;
+  border-color: #46685e;
+}
+.assistant-copy {
+  position: relative;
+}
+.assistant-copy textarea {
+  padding-right: 38px;
+  font-family: Consolas, monospace;
+}
+.assistant-copy .copy-action {
+  position: absolute;
+  right: 5px;
+  top: 4px;
+}
+.copy-action {
+  display: inline-flex;
+  align-items: center;
+}
+.copy-action button {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 6px;
+  color: #b6ccc7;
+  border-color: transparent;
+  background: transparent;
+}
+.copy-action button:hover:enabled {
+  color: #c3f7df;
+  background: #28413a;
+}
+.copy-action small:not(:empty, .sr-only) {
+  color: #e2d1aa;
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+.assistant-model-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 0 12px;
+}

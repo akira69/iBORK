@@ -3,8 +3,10 @@ package management
 import (
 	"context"
 	"errors"
+
 	"github.com/bougou/go-ipmi/pkg/client"
 	"github.com/bougou/go-ipmi/pkg/command/dcmi"
+	"github.com/bougou/go-ipmi/pkg/types"
 )
 
 func measurementWatts(reading *dcmi.GetDCMIPowerReadingResponse) (float64, error) {
@@ -15,7 +17,7 @@ func measurementWatts(reading *dcmi.GetDCMIPowerReadingResponse) (float64, error
 }
 
 func (p *ipmiProvider) Watts(ctx context.Context) (watts float64, err error) {
-	err = p.run(ctx, func(ctx context.Context, c *client.Client) error {
+	err = p.run(ctx, types.PrivilegeLevelUser, func(ctx context.Context, c *client.Client) error {
 		reading, e := c.GetDCMIPowerReading(ctx)
 		if e != nil {
 			return e

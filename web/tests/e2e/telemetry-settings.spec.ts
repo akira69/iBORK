@@ -12,7 +12,7 @@ test("SSH setup generates a scoped command and applies the local origin without 
     .click();
   await page.getByLabel("Device type").selectOption("telemetry");
   await page.getByText("Connect Glances over SSH", { exact: true }).click();
-  const copy = page.getByRole("button", { name: "Copy setup command" });
+  const copy = page.getByRole("button", { name: "Copy: Start setup" });
   await expect(copy).toBeDisabled();
   await page.getByLabel("Glances server IPv4 address").fill("192.0.2.10;id");
   await expect(copy).toBeDisabled();
@@ -23,13 +23,56 @@ test("SSH setup generates a scoped command and applies the local origin without 
   await port.fill("62001");
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await copy.click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(
-    /^bash -s -- 192\.0\.2\.10 62001 <<'IBORK_GLANCES_SETUP'/,
+  const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+  expect(await clipboard()).toBe(
+    "/opt/jet-supermicro/jet-supermicro glances-tunnel 192.0.2.10 62001",
   );
-  await page.getByText("View setup command", { exact: true }).click();
+  const authorize = page.getByRole("button", {
+    name: "Copy: Authorize the tunnel key",
+  });
+  const pairing = page.getByLabel("Public pairing line");
+  await pairing.fill("192.0.2.1 ssh-ed25519 key;id");
+  await expect(authorize).toBeDisabled();
+  const key = "ssh-ed25519 " + "A".repeat(68);
+  await pairing.fill("192.0.2.1 " + key);
+  const panel = page.locator(".glances-setup");
+  const columns = panel.locator(".glances-hosts section");
+  expect((await columns.first().boundingBox())!.y).toBe(
+    (await columns.last().boundingBox())!.y,
+  );
+  await panel.screenshot({
+    path: "test-results/screenshots/glances-setup.png",
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await panel.evaluate((el) => el.scrollWidth)).toBeLessThanOrEqual(390);
+  await panel.screenshot({
+    path: "test-results/screenshots/glances-mobile.png",
+  });
+  await authorize.click();
+  const auth = await clipboard();
+  expect(auth).toContain('from="192.0.2.1",restrict,port-forwarding');
+  expect(auth).toContain(key);
+  expect(auth).not.toMatch(/\n|SSH_PUBLIC_KEY|SOURCE_IPV4/);
+  for (const [title, prefix] of [
+    ["Create the tunnel account", "id ibork-glances"],
+    ["Read the server host key", "cat /etc/ssh/ssh_host_ed25519_key.pub"],
+  ]) {
+    await page.getByRole("button", { name: "Copy: " + title }).click();
+    expect((await clipboard()).startsWith(prefix)).toBe(true);
+  }
+  await page.evaluate(() =>
+    Object.defineProperty(navigator.clipboard, "writeText", {
+      value: async () => {
+        throw Error("Clipboard blocked");
+      },
+    }),
+  );
+  await copy.click();
   await expect(
-    page.getByRole("textbox", { name: "Tunnel setup command" }),
-  ).toHaveValue(/StrictHostKeyChecking=yes/);
+    panel.getByText("Select the text and copy manually."),
+  ).toBeVisible();
+  await page.getByLabel("Glances server IPv4 address").fill("192.0.2.11");
+  await expect(authorize).toBeDisabled();
   await page
     .getByRole("button", { name: "Use tunnel origin http://127.0.0.1:62001" })
     .click();

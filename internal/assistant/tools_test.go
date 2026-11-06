@@ -27,4 +27,8 @@ func TestScopeAndDraft(t *testing.T) {
 	if call(`{"name":"Other","bmc":"outside"}`) == nil || call(`{"name":"Vault","password":"bad"}`) == nil {
 		t.Fatal("accepted invalid input")
 	}
+	g.Candidates = append(g.Candidates, Candidate{ID: "kvm", Kind: "kvm", Address: "10.1.2.2"})
+	if call(`{"name":"Vault","kvm":"kvm"}`) != nil || g.Draft.JetURL != "http://10.1.2.2:80" {
+		t.Fatalf("draft must match a saved JetKVM endpoint: %+v", g.Draft)
+	}
 }

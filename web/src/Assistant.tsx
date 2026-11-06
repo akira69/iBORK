@@ -1,4 +1,13 @@
-import { useEffect, useRef, useState, useLayoutEffect } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useRef,
+  useState,
+  useLayoutEffect,
+} from "react";
+import { Cable, Network, SlidersHorizontal } from "lucide-react";
+import { CopyButton } from "./CopyButton";
 import { createPortal } from "react-dom";
 import { ReviewedConnection } from "./ConnectionSettings";
 import type { SettingsSection } from "./AssistantDrawer";
@@ -44,7 +53,6 @@ export default function Assistant({
   onLayout?: (id: string) => void;
 }) {
   const t = assistantCopy(navigator.language);
-  const [loadAttempt, setLoadAttempt] = useState(0);
   const [status, setStatus] = useState<State>();
   const [savedModel, setSavedModel] = useState({
     base: "",
@@ -64,7 +72,7 @@ export default function Assistant({
   useLayoutEffect(() => {
     if (!host || !link || lastLink.current === link.request) return;
     const outer = host.closest("details");
-    const section = host.querySelector<HTMLDetailsElement>(
+    const section = host.querySelector<HTMLButtonElement>(
       `[data-section="${link.section}"]`,
     );
     if (!outer) return;
@@ -74,57 +82,57 @@ export default function Assistant({
       return;
     }
     lastLink.current = link.request;
-    section.open = true;
-    section.querySelector("summary")?.focus();
+    section.click();
+    section.focus();
     section.scrollIntoView({ block: "center" });
   }, [host, link, status]);
   useEffect(() => {
     if (opened && transcript.current)
       transcript.current.scrollTop = transcript.current.scrollHeight;
   }, [chat, opened]);
-  useEffect(() => {
-    const controller = new AbortController();
-    api<Status>("assistant/status", {
-      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
-    })
-      .then((s) => {
-        if (controller.signal.aborted) return;
-        setStatus(s.state);
-        const messages = s.messages ?? [];
-        setChat(
-          messages.flatMap((m, i) =>
-            m.role === "user" && messages[i + 1]?.role === "assistant"
-              ? [
-                  {
-                    question: m.content,
-                    result: {
-                      reply: messages[i + 1].content,
-                      activity: null,
-                      state: s.state,
-                    },
+  async function refreshStatus(signal: AbortSignal) {
+    const s = await api<Status>("assistant/status", {
+      signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+    });
+    if (signal.aborted) return;
+    setStatus(s.state);
+    if (s.state.draft?.id !== status?.draft?.id) setReviewing(false);
+    if (
+      s.state.layout?.source !== status?.layout?.source ||
+      s.state.layout?.target !== status?.layout?.target
+    )
+      setPreview(undefined);
+    if (!status || s.revision !== revision) {
+      const messages = s.messages ?? [];
+      setChat(
+        messages.flatMap((m, i) =>
+          m.role === "user" && messages[i + 1]?.role === "assistant"
+            ? [
+                {
+                  question: m.content,
+                  result: {
+                    reply: messages[i + 1].content,
+                    activity: null,
+                    state: s.state,
                   },
-                ]
-              : [],
-          ),
-        );
-        setRevision(s.revision);
-        setSavedModel({ base: s.baseUrl, model: s.model, hasKey: s.hasKey });
-      })
-      .catch((e) => {
-        if (!controller.signal.aborted) setNote(String(e));
-      });
-    return () => {
-      controller.abort();
-      active.current?.abort();
-    };
-  }, [loadAttempt]);
+                },
+              ]
+            : [],
+        ),
+      );
+      setRevision(s.revision);
+      setSavedModel({ base: s.baseUrl, model: s.model, hasKey: s.hasKey });
+    }
+  }
+  const loadStatus = useEffectEvent(() => {
+    if (!status || opened) void run(refreshStatus);
+  });
+  useEffect(() => {
+    loadStatus();
+  }, [opened]);
+  useEffect(() => () => active.current?.abort(), []);
   const retryStatus = !status && note && (
-    <button
-      onClick={() => {
-        setNote("");
-        setLoadAttempt((n) => n + 1);
-      }}
-    >
+    <button disabled={busy} onClick={() => void run(refreshStatus)}>
       {t.retry}
     </button>
   );
@@ -168,6 +176,7 @@ export default function Assistant({
         createPortal(
           status ? (
             <AssistantSettings
+              key={revision}
               provider={savedModel}
               approvedScope={status.scope}
               busy={busy}
@@ -232,11 +241,7 @@ export default function Assistant({
         </div>
         <button
           disabled={busy || !status}
-          onClick={() =>
-            run(async (signal) =>
-              update((await api<Status>("assistant/status", { signal })).state),
-            )
-          }
+          onClick={() => void run(refreshStatus)}
         >
           {t.refresh}
         </button>
@@ -340,7 +345,9 @@ export default function Assistant({
               );
               update(result.state);
               setChat((old) => [...old.slice(-19), { question, result }]);
-              setMessage("");
+              setMessage((current) =>
+                current.trim() === question ? "" : current,
+              );
             });
           }}
         >
@@ -396,6 +403,22 @@ function AssistantSettings({
   onScope: (state: State) => void;
 }) {
   const t = assistantCopy(navigator.language);
+  const [section, setSection] = useState<SettingsSection>("provider");
+  const prefix = useId();
+  const tabs = ["provider", "scope", "connect"] as const;
+  const icons = { provider: SlidersHorizontal, scope: Network, connect: Cable };
+  const mcpConfig = JSON.stringify(
+    {
+      mcpServers: {
+        ibork: {
+          url: location.origin + "/api/assistant/mcp",
+          headers: { Authorization: "Bearer <token>" },
+        },
+      },
+    },
+    null,
+    2,
+  );
   const [base, setBase] = useState(provider.base);
   const [model, setModel] = useState(provider.model);
   const [hasKey, setHasKey] = useState(provider.hasKey);
@@ -405,33 +428,75 @@ function AssistantSettings({
   const [expiry, setExpiry] = useState("");
   return (
     <div className="assistant-body">
-      <details data-section="provider">
-        <summary>{t.provider}</summary>
-        <label>
-          {t.endpoint}
-          <input
-            value={base}
-            onChange={(e) => {
-              setBase(e.target.value);
-              setKey("");
-              setHasKey(false);
-            }}
-            placeholder="https://…/v1"
-          />
-        </label>
-        <label>
-          {t.model}
-          <input value={model} onChange={(e) => setModel(e.target.value)} />
-        </label>
-        <label>
-          {t.key}
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-          />
-        </label>
+      <div className="assistant-tabs" role="tablist" aria-label={t.settings}>
+        {tabs.map((id, index) => {
+          const Icon = icons[id];
+          return (
+            <button
+              type="button"
+              role="tab"
+              key={id}
+              id={prefix + id}
+              data-section={id}
+              aria-label={t[id]}
+              title={t[id]}
+              aria-controls={prefix + id + "-panel"}
+              aria-selected={section === id}
+              tabIndex={section === id ? 0 : -1}
+              onClick={() => setSection(id)}
+              onKeyDown={(event) => {
+                const next = {
+                  ArrowLeft: (index + 2) % 3,
+                  ArrowRight: (index + 1) % 3,
+                  Home: 0,
+                  End: 2,
+                }[event.key];
+                if (next === undefined) return;
+                event.preventDefault();
+                setSection(tabs[next]);
+                document.getElementById(prefix + tabs[next])?.focus();
+              }}
+            >
+              <Icon />
+              {t.shortTabs[id]}
+            </button>
+          );
+        })}
+      </div>
+      <section
+        role="tabpanel"
+        id={prefix + "provider-panel"}
+        aria-labelledby={prefix + "provider"}
+        hidden={section !== "provider"}
+      >
+        <h3>{t.provider}</h3>
+        <div className="assistant-model-fields">
+          <label>
+            {t.endpoint}
+            <input
+              value={base}
+              onChange={(e) => {
+                setBase(e.target.value);
+                setKey("");
+                setHasKey(false);
+              }}
+              placeholder="https://…/v1"
+            />
+          </label>
+          <label>
+            {t.model}
+            <input value={model} onChange={(e) => setModel(e.target.value)} />
+          </label>
+          <label>
+            {t.key}
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+            />
+          </label>
+        </div>
         {hasKey && <p>{t.retained}</p>}
         <button
           disabled={busy || !model || !base}
@@ -454,9 +519,14 @@ function AssistantSettings({
         >
           {t.test}
         </button>
-      </details>
-      <details data-section="scope">
-        <summary>{t.scope}</summary>
+      </section>
+      <section
+        role="tabpanel"
+        id={prefix + "scope-panel"}
+        aria-labelledby={prefix + "scope"}
+        hidden={section !== "scope"}
+      >
+        <h3>{t.scope}</h3>
         <label>
           {t.hosts}
           <input value={scope} onChange={(e) => setScope(e.target.value)} />
@@ -473,30 +543,27 @@ function AssistantSettings({
         >
           {t.approve}
         </button>
-      </details>
-      <p>
-        {t.scopeLabel}: {approvedScope || t.noScope}
-      </p>
-      <details data-section="connect">
-        <summary>{t.connect}</summary>
+        <p>
+          {t.scopeLabel}: {approvedScope || t.noScope}
+        </p>
+      </section>
+      <section
+        role="tabpanel"
+        id={prefix + "connect-panel"}
+        aria-labelledby={prefix + "connect"}
+        hidden={section !== "connect"}
+      >
+        <h3>{t.connect}</h3>
         <p>{t.pairHelp}</p>
-        <textarea
-          readOnly
-          aria-label="MCP JSON"
-          onFocus={(e) => e.target.select()}
-          value={JSON.stringify(
-            {
-              mcpServers: {
-                ibork: {
-                  url: location.origin + "/api/assistant/mcp",
-                  headers: { Authorization: "Bearer <token>" },
-                },
-              },
-            },
-            null,
-            2,
-          )}
-        />
+        <div className="assistant-copy">
+          <textarea
+            readOnly
+            aria-label="MCP JSON"
+            onFocus={(e) => e.target.select()}
+            value={mcpConfig}
+          />
+          <CopyButton label={t.copyConfig} text={mcpConfig} />
+        </div>
         <div>
           <button
             disabled={busy}
@@ -532,15 +599,18 @@ function AssistantSettings({
           </p>
         )}
         {secret && (
-          <input
-            aria-label="Bearer token"
-            readOnly
-            title={expiry}
-            value={secret}
-            onFocus={(e) => e.target.select()}
-          />
+          <div className="assistant-copy">
+            <input
+              aria-label="Bearer token"
+              readOnly
+              title={expiry}
+              value={secret}
+              onFocus={(e) => e.target.select()}
+            />
+            <CopyButton label={t.copyToken} text={secret} />
+          </div>
         )}
-      </details>
+      </section>
       <p role="status">{feedback}</p>
     </div>
   );

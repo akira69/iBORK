@@ -29,7 +29,7 @@ import { WidgetCatalog } from "./WidgetCatalog";
 import {
   catalog,
   validDashboardSensorId,
-  widgetAvailable,
+  availableDashboardLayout,
   selectedSensors,
   defaultLayout,
   readLayout,
@@ -345,42 +345,18 @@ export function DashboardGrid(props: Props) {
           props.managementAvailable,
           !props.jetAvailable && !props.vncAvailable && props.cometAvailable,
         ));
-  const available = (layout: DashboardLayout) => {
-    const previousConsole =
-      !props.fixedLayout &&
-      props.cometAvailable &&
-      !props.jetAvailable &&
-      !props.vncAvailable &&
-      !layout.widgets.some((w) => w.kind === "glinet")
-        ? layout.widgets.find((w) => w.kind === "jetkvm" || w.kind === "vnc")
-        : undefined;
-    return {
-      ...layout,
-      widgets: props.fixedLayout
-        ? defaults.widgets.map(
+  const available = (layout: DashboardLayout) =>
+    props.fixedLayout
+      ? {
+          ...layout,
+          widgets: defaults.widgets.map(
             (w) =>
               layout.widgets.find(
                 (saved) => saved.id === w.id && saved.kind === w.kind,
               ) ?? w,
-          )
-        : layout.widgets
-            .filter((w) => Boolean(w.deviceIds) === Boolean(props.fleet))
-            .map((w) =>
-              w === previousConsole
-                ? { ...w, id: "glinet", kind: "glinet" as const }
-                : w,
-            )
-            .filter((w) =>
-              widgetAvailable(
-                w.kind,
-                props.jetAvailable,
-                props.vncAvailable,
-                props.managementAvailable,
-                props.cometAvailable,
-              ),
-            ),
-    };
-  };
+          ),
+        }
+      : availableDashboardLayout(layout, props, !!props.fleet);
   const [initial] = useState(() => {
     const saved = readLayout(props.storageKey, defaults);
     return { ...saved, layout: available(saved.layout) };

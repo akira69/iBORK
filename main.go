@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -27,6 +28,9 @@ import (
 
 //go:embed web/dist
 var assets embed.FS
+
+//go:embed deploy/glances-tunnel.sh
+var glancesTunnel string
 var errSettingsReload = errors.New("server settings changed")
 
 func env(key, fallback string) string {
@@ -47,6 +51,14 @@ func secret(key string) (string, error) {
 	return strings.TrimRight(string(data), "\r\n"), nil
 }
 func run(logins *server.LoginState) error {
+	if len(os.Args) > 1 && os.Args[1] == "glances-tunnel" {
+		if len(os.Args) != 4 {
+			return errors.New("usage: glances-tunnel GLANCES_IPV4 LOCAL_PORT")
+		}
+		cmd := exec.Command("/bin/bash", "-c", glancesTunnel, "glances-tunnel", os.Args[2], os.Args[3], "--guided")
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+		return cmd.Run()
+	}
 	if len(os.Args) == 2 && (os.Args[1] == "hash-password" || os.Args[1] == "hash-panel-pin") {
 		panelPIN := os.Args[1] == "hash-panel-pin"
 		if panelPIN {

@@ -16,12 +16,12 @@ import (
 )
 
 // Retain the socket so a stalled close handshake cannot delay key/token cleanup.
-type cometUpgrade struct {
+type consoleUpgrade struct {
 	http.ResponseWriter
 	socket net.Conn
 }
 
-func (w *cometUpgrade) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+func (w *consoleUpgrade) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	conn, buffer, err := http.NewResponseController(w.ResponseWriter).Hijack()
 	w.socket = conn
 	return conn, buffer, err
@@ -81,7 +81,7 @@ func (s *Server) serveComet(w http.ResponseWriter, r *http.Request, login contex
 			return err
 		}
 		defer events.CloseNow()
-		upgrade := &cometUpgrade{ResponseWriter: w}
+		upgrade := &consoleUpgrade{ResponseWriter: w}
 		browser, err := websocket.Accept(upgrade, r, nil)
 		if err != nil {
 			accepted = true

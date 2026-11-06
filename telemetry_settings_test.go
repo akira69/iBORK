@@ -40,6 +40,25 @@ func TestTelemetrySettingsLifecycle(t *testing.T) {
 	}
 }
 
+func TestEquivalentBMCEditKeepsPowerHistoryIdentity(t *testing.T) {
+	for _, hosts := range [][2]string{{"BMC.Example", "bmc.example"}, {"2001:0db8::1", "2001:db8::1"}} {
+		store := &profileStore{dir: t.TempDir()}
+		password := "fixture"
+		input := server.DeviceSettings{Name: "node", Host: hosts[0], Port: 623, Username: "user", Password: &password}
+		if err := store.Save(input); err != nil {
+			t.Fatal(err)
+		}
+		store.pending = false
+		input.ID, input.Host, input.Password = store.profiles[0].ID, hosts[1], nil
+		if err := store.Save(input); err != nil {
+			t.Fatal(err)
+		}
+		if got := store.profiles[0].Host; got != hosts[0] {
+			t.Fatalf("history identity changed from %q to %q", hosts[0], got)
+		}
+	}
+}
+
 func TestOutletCannotBeAssignedAcrossProtocols(t *testing.T) {
 	store := &profileStore{dir: t.TempDir()}
 	input := server.DeviceSettings{Name: "First", Telemetry: &server.TelemetrySettings{
