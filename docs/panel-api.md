@@ -46,7 +46,9 @@ Send `Authorization: Bearer <token>` with every request. The native client may o
 
 Each device may also include a `sidebar` object with its `id`, short `label` and a base64-encoded 40 × 40 JPEG `image`. The selected server may also return an 80 by 80 JPEG in `detail.image`. The authenticated web settings can publish a set from the operator's browser.
 
-Opening a server dashboard requests the hottest mapped temperature and the lowest and highest reported fan speeds for that server. A cold read returns null while the service fetches the sensors. After 20 seconds the next detail request refreshes the readings in the background. The panel can receive the last successful readings until they reach 90 seconds of age. Failed reads back off for 20 seconds.
+The CrowPanel requests `?preload=0` on wake or cold start without cached artwork, then supplies the returned `artRevision` on subsequent polls. Each response includes `details` keyed by included server ID. An unchanged revision omits both image sizes. A pending read can be polled again without blocking on the BMC.
+
+The single-server `?detail=<id>` route requests the hottest mapped temperature and the lowest and highest reported fan speeds for that server. A cold read returns null while the service fetches the sensors. After 20 seconds the next detail request refreshes the readings in the background. The panel can receive the last successful readings until they reach 90 seconds of age. Failed reads back off for 20 seconds.
 
 **GET /api/panel-layout** returns the effective layout for the authenticated web operator. **PUT /api/panel-layout** requires the operator's CSRF token, the current `revision`, at least one ordered `home` section and a `servers` row for every current inventory ID. Each row supplies `id`, `included` and its ordered `widgets` from `power`, `temperature`, `fan` and `controls`. The response lists each server's `available` widgets. Reload the layout after an HTTP 409 conflict.
 

@@ -60,6 +60,7 @@ func (s *Server) panelCached(panelCtx context.Context, key string, ttl, maxAge t
 }
 
 type panelReadings struct {
+	Pending     bool     `json:"pending,omitempty"`
 	ID          string   `json:"id"`
 	Image       []byte   `json:"image,omitempty"`
 	PowerState  string   `json:"powerState,omitempty"`

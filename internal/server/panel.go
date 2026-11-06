@@ -7,11 +7,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"hash/crc32"
 	"maps"
 	"net"
 	"net/http"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -113,7 +115,9 @@ func (s *Server) servePanel(w http.ResponseWriter, r *http.Request) {
 			p.capturedAt = now
 		}
 		snapshot := p.snapshot
-		if id := r.URL.Query().Get("detail"); id != "" {
+		if revision := r.URL.Query().Get("preload"); revision != "" {
+			snapshot = s.preloadPanel(snapshot, revision)
+		} else if id := r.URL.Query().Get("detail"); id != "" {
 			for _, device := range snapshot["devices"].([]panelDevice) {
 				if device.ID == id {
 					snapshot = maps.Clone(snapshot)
@@ -135,6 +139,42 @@ func (s *Server) servePanel(w http.ResponseWriter, r *http.Request) {
 	default:
 		fail(w, 405, "Unsupported panel method")
 	}
+}
+
+// Take a nonblocking reading for every visible device. Artwork travels once per inventory revision.
+func (s *Server) preloadPanel(base map[string]any, clientRevision string) map[string]any {
+	devices := slices.Clone(base["devices"].([]panelDevice))
+	details := make(map[string]panelReadings, len(devices))
+	sum := crc32.NewIEEE()
+	for _, device := range devices {
+		icon := s.panel.icons[device.ID]
+		sum.Write([]byte(device.ID + "\x00" + icon.Label + "\x00"))
+		sum.Write(icon.Image)
+		sum.Write(icon.DetailImage)
+		d := s.devices[device.ID]
+		detail := d.panelDetail(s.panel.ctx, device)
+		d.cacheMu.Lock()
+		detail.Pending = d.panelSensorScan.running || d.panelPowerScan.running
+		d.cacheMu.Unlock()
+		details[device.ID] = detail
+	}
+	revision := sum.Sum32()
+	if revision == 0 {
+		revision = 1
+	}
+	cached := clientRevision == strconv.FormatUint(uint64(revision), 10)
+	for i, device := range devices {
+		if cached {
+			devices[i].Sidebar = nil
+		} else {
+			detail := details[device.ID]
+			detail.Image = s.panel.icons[device.ID].DetailImage
+			details[device.ID] = detail
+		}
+	}
+	snapshot := maps.Clone(base)
+	snapshot["devices"], snapshot["details"], snapshot["artRevision"] = devices, details, revision
+	return snapshot
 }
 
 type panelDevice struct {
