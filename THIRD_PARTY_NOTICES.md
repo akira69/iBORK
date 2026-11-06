@@ -68,3 +68,11 @@ endorsement. Images are bundled locally, with no third-party image requests.
   `90646e4bf7f3b89df6c37e65baf3e7bc759a517c`, CC0-1.0.
   Source: https://github.com/simple-icons/simple-icons/blob/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/dell.svg.
   License retained in `docs/licenses/simple-icons-CC0.txt`; Dell trademark rights remain with Dell.
+
+## Remote display preview
+
+The branding JPEGs, transmission pictogram and two resting knife-switch poses
+in `web/src/assets/panel/` come from [iBORK-ESP32 firmware artwork](https://github.com/akira69/iBORK-ESP32/tree/d84d2dc11f97fc0711bd573047690711457e5297/art).
+The firmware is licensed under GPL-2.0. The iBORK and Finch13 marks identify
+the project. The Settings gear includes Lucide artwork under the notices in
+`docs/licenses/panel-settings-lucide.txt`.

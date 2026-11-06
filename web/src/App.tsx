@@ -70,7 +70,7 @@ import {
 } from "./ConsoleSessions";
 import { ServerIcon } from "./ServerIcon";
 import { PasswordSettings } from "./PasswordSettings";
-import { PanelDisplaySettings } from "./PanelDisplaySettings";
+import { AssistantDrawer, type AssistantControls } from "./AssistantDrawer";
 import { PanelLayoutSettings } from "./PanelLayout";
 import { PowerUsage } from "./PowerUsage";
 import {
@@ -261,37 +261,51 @@ export function App() {
     <ElectricityRateProvider csrf={csrf}>
       <DeviceWorkspace
         empty={
-          <main className="main app-settings">
-            <PanelLayoutSettings csrf={csrf}>
-              <img src="/ibork.svg" alt="iBORK" width="64" height="64" />
-              <h1>Information</h1>
-              <Information />
-              <h2>iBORK settings</h2>
-              <p>No devices saved. Add a server or standalone KVM to begin.</p>
-              <ConnectionSettings csrf={csrf} />
-              <PasswordSettings csrf={csrf} onChanged={() => setCSRF(null)} />
-              <ElectricityRateSettings />
-              <PanelDisplaySettings csrf={csrf} />
-              <button
-                onClick={async () => {
-                  await api("logout", {
-                    method: "POST",
-                    headers: { "X-CSRF-Token": csrf },
-                    body: "{}",
-                  });
-                  setCSRF(null);
-                }}
-              >
-                Sign out
-              </button>
-            </PanelLayoutSettings>
-          </main>
+          <AssistantDrawer csrf={csrf}>
+            {({ openAssistant, settings, settingsRequest }) => (
+              <main className="main app-settings">
+                <PanelLayoutSettings
+                  csrf={csrf}
+                  settingsRequest={settingsRequest}
+                >
+                  <img src="/ibork.svg" alt="iBORK" width="64" height="64" />
+                  <h1>Information</h1>
+                  <Information />
+                  <h2>iBORK settings</h2>
+                  <p>
+                    No devices saved. Add a server or standalone KVM to begin.
+                  </p>
+                  <ConnectionSettings
+                    csrf={csrf}
+                    openAssistant={openAssistant}
+                  />
+                  {settings}
+                  <PasswordSettings
+                    csrf={csrf}
+                    onChanged={() => setCSRF(null)}
+                  />
+                  <ElectricityRateSettings />
+                  <button
+                    onClick={async () => {
+                      await api("logout", {
+                        method: "POST",
+                        headers: { "X-CSRF-Token": csrf },
+                        body: "{}",
+                      });
+                      setCSRF(null);
+                    }}
+                  >
+                    Sign out
+                  </button>
+                </PanelLayoutSettings>
+              </main>
+            )}
+          </AssistantDrawer>
         }
       >
         {(workspace) => (
           <ConsoleSessions devices={workspace.devices} csrf={csrf}>
-            <Dashboard
-              key={workspace.device.id}
+            <FleetDashboard
               workspace={workspace}
               csrf={csrf}
               passwordChanged={() => {
@@ -314,16 +328,47 @@ export function App() {
   );
 }
 
+type DashboardProps = {
+  workspace: Workspace;
+  csrf: string;
+  logout: () => Promise<void>;
+  passwordChanged: () => void;
+};
+function FleetDashboard(props: DashboardProps) {
+  const { setView } = useConsoleSessions();
+  const [dashboardVersion, setDashboardVersion] = useState(0);
+  return (
+    <AssistantDrawer
+      csrf={props.csrf}
+      onSettings={() => {
+        setView("server");
+        props.workspace.setTab("iBORK settings");
+      }}
+      onLayout={(id) => {
+        if (id === props.workspace.device.id) setDashboardVersion((v) => v + 1);
+      }}
+    >
+      {(assistant) => (
+        <Dashboard
+          key={props.workspace.device.id}
+          {...props}
+          assistant={assistant}
+          dashboardVersion={dashboardVersion}
+        />
+      )}
+    </AssistantDrawer>
+  );
+}
 function Dashboard({
   workspace,
   csrf,
   logout,
   passwordChanged,
-}: {
-  workspace: Workspace;
-  csrf: string;
-  logout: () => Promise<void>;
-  passwordChanged: () => void;
+  assistant,
+  dashboardVersion,
+}: DashboardProps & {
+  assistant: AssistantControls;
+  dashboardVersion: number;
 }) {
   const { device, devices, displays, select, tab, setTab } = workspace;
   const apiPrefix = `devices/${device.id}/`;
@@ -396,7 +441,6 @@ function Dashboard({
       cancelled = true;
     };
   }, [consoleStore, device.id, autoSources, view, tab, autoConnect]);
-  const [dashboardVersion, setDashboardVersion] = useState(0);
   const hasManagement = device.hasManagement !== false;
   const hasComet = sourcesFor(device).includes("glinet");
   const endpointKey = endpointKeyFor(device);
@@ -1344,7 +1388,11 @@ function Dashboard({
           {tab === "Information" && <Information />}
           {tab === "iBORK settings" && (
             <section aria-label="iBORK settings" className="app-settings">
-              <PanelLayoutSettings csrf={csrf} workspace={workspace}>
+              <PanelLayoutSettings
+                csrf={csrf}
+                workspace={workspace}
+                settingsRequest={assistant.settingsRequest}
+              >
                 <button
                   className="quiet"
                   onClick={() => setTab(defaultDeviceTab(device))}
@@ -1358,14 +1406,12 @@ function Dashboard({
                 <div className="settings-grid">
                   <ConnectionSettings
                     csrf={csrf}
-                    onLayout={(id) => {
-                      if (id === device.id) setDashboardVersion((v) => v + 1);
-                    }}
+                    openAssistant={assistant.openAssistant}
                   />
+                  {assistant.settings}
                   <PasswordSettings csrf={csrf} onChanged={passwordChanged} />
                   <ElectricityRateSettings />
                   <SidebarSettings workspace={workspace} openServer={select} />
-                  <PanelDisplaySettings csrf={csrf} workspace={workspace} />
                 </div>
               </PanelLayoutSettings>
             </section>

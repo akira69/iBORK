@@ -33,6 +33,39 @@ async function editor(page: Page) {
       })),
     }),
   );
+  await page.route("**/api/remote-display", (route) =>
+    route.fulfill({
+      json: {
+        connected: true,
+        lastSeen: Math.floor(Date.now() / 1000),
+        snapshot: {
+          devices: names.slice(0, 3).map((name, i) => ({
+            id: name.toLowerCase(),
+            name,
+            model: "",
+            metered: true,
+            watts: [50, 75, 100][i],
+            controls: true,
+          })),
+          details: {
+            "demo-a": {
+              temperature: 37,
+              fan: 900,
+              fanMax: 1300,
+              powerState: "on",
+            },
+          },
+          day: Array(24).fill(225),
+          month: Array(30).fill(225),
+          dayHours: 24,
+          monthHours: 720,
+          dayKwh: 5.4,
+          monthKwh: 162,
+          usdPerKwh: 0.2,
+        },
+      },
+    }),
+  );
   let stored = initial(),
     failure = 0;
   const writes: unknown[] = [];
@@ -68,7 +101,7 @@ async function editor(page: Page) {
   await page
     .getByRole("button", { name: "iBORK settings", exact: true })
     .click();
-  await page.getByRole("button", { name: "Edit display layout" }).click();
+  await page.getByRole("button", { name: "Remote display" }).click();
   return {
     writes,
     setFailure(value: number) {
@@ -96,6 +129,12 @@ test("layout preview follows visible order and server capabilities, and persists
   await expect(preview).toContainText("Elecrow CrowPanel V3");
   await expect(preview.locator(".cl-screen")).toHaveCSS("width", "800px");
   await expect(preview.locator(".cl-screen")).toHaveCSS("height", "480px");
+  await preview.getByLabel("Preview palette").selectOption("Amber");
+  await expect(preview.locator(".cl-screen")).toHaveCSS(
+    "background-color",
+    "rgb(29, 23, 17)",
+  );
+  await preview.getByLabel("Preview palette").selectOption("Teal");
   await expect(save).toBeDisabled();
   await expect(preview.locator(".cl-chart-row > section")).toHaveCount(2);
   await expect(
@@ -131,7 +170,10 @@ test("layout preview follows visible order and server capabilities, and persists
   ).toHaveAccessibleName("Preview DEMO-C");
   await controls.getByRole("checkbox", { name: "Server tiles" }).uncheck();
   await expect(preview.locator(".cl-tiles")).toHaveCount(0);
-  await preview.getByLabel("Preview server selector").selectOption("demo-c");
+  await preview
+    .getByRole("button", { name: "Preview server selector" })
+    .click();
+  await preview.getByRole("button", { name: "Preview DEMO-C" }).click();
   await expect(
     controls
       .getByRole("list", { name: "Server widgets" })
@@ -141,13 +183,20 @@ test("layout preview follows visible order and server capabilities, and persists
     .getByRole("checkbox", { name: "Power draw", exact: true })
     .uncheck();
   await expect(
-    preview.getByText("No widgets enabled for this server."),
+    preview.getByText("No widgets enabled for this server"),
   ).toBeVisible();
   await controls.getByLabel("Server to edit").selectOption("demo-a");
   await controls.getByRole("button", { name: "Move Temperature up" }).click();
   await expect(preview.locator(".cl-stat").first()).toContainText(
     "Hottest temperature",
   );
+  await expect(preview.locator(".cl-switch img")).toHaveCSS("width", "282px");
+  await expect(preview.locator(".cl-switch img")).toHaveCSS("height", "254px");
+  await expect(preview.locator(".cl-stat")).toContainText([
+    "37.0",
+    "50 W",
+    "Highest: 1300 RPM",
+  ]);
   await page.screenshot({ path: shot("desktop-server.png") });
   await save.click();
   await expect(page.getByRole("status")).toHaveText("Layout saved.");
@@ -162,7 +211,7 @@ test("layout preview follows visible order and server capabilities, and persists
     ],
   });
   await page.reload();
-  await page.getByRole("button", { name: "Edit display layout" }).click();
+  await page.getByRole("button", { name: "Remote display" }).click();
   await expect(
     controls.getByRole("checkbox", { name: "Server tiles", exact: true }),
   ).not.toBeChecked();
@@ -237,8 +286,8 @@ test("dragging a chart separates its row and a fleet with all servers hidden can
   const servers = controls.getByRole("list", { name: "Servers on panel" });
   for (const box of await servers.getByRole("checkbox").all())
     await box.uncheck();
-  await expect(preview.getByText("No servers on panel")).toBeVisible();
-  await expect(preview.locator(".cl-power")).toContainText("0 servers");
+  await expect(preview.getByText("No servers on this panel")).toBeVisible();
+  await expect(preview.locator(".cl-power")).toContainText("0 metered");
   await page.getByRole("button", { name: "Save layout" }).click();
   await expect(page.getByRole("status")).toHaveText("Layout saved.");
   expect(api.writes.at(-1)).toMatchObject({
@@ -257,7 +306,7 @@ test("empty inventory supports the editor, with recoverable reads and hidden dis
     page.getByText("No devices saved.", { exact: false }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Edit display layout" }),
+    page.getByRole("button", { name: "Remote display" }),
   ).toHaveCount(0);
   let ready = false;
   await page.route("**/api/panel-layout", (route) =>
@@ -271,9 +320,11 @@ test("empty inventory supports the editor, with recoverable reads and hidden dis
   );
   ready = true;
   await page.getByRole("button", { name: "Retry loading layout" }).click();
-  await page.getByRole("button", { name: "Edit display layout" }).click();
+  await page.getByRole("button", { name: "Remote display" }).click();
   await expect(
-    page.getByText("No servers on panel", { exact: true }),
+    page
+      .getByLabel("Server tiles preview")
+      .getByText("Waiting for iBORK", { exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Servers", exact: true }).click();
   await expect(page.getByText("No servers configured.")).toBeVisible();

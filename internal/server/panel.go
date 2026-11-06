@@ -32,6 +32,9 @@ type panelAccess struct {
 	window         time.Time
 	failures       int
 	snapshotMu     sync.Mutex
+	lastSeen       time.Time
+	lastIcons      map[string]panelIcon
+	lastDetails    map[string]panelReadings
 	capturedAt     time.Time
 	snapshot       map[string]any
 	display        displaySchedule // protected by snapshotMu
@@ -115,8 +118,10 @@ func (s *Server) servePanel(w http.ResponseWriter, r *http.Request) {
 			p.capturedAt = now
 		}
 		snapshot := p.snapshot
+		p.lastDetails = nil
 		if revision := r.URL.Query().Get("preload"); revision != "" {
 			snapshot = s.preloadPanel(snapshot, revision)
+			p.lastDetails = snapshot["details"].(map[string]panelReadings)
 		} else if id := r.URL.Query().Get("detail"); id != "" {
 			for _, device := range snapshot["devices"].([]panelDevice) {
 				if device.ID == id {
@@ -124,10 +129,12 @@ func (s *Server) servePanel(w http.ResponseWriter, r *http.Request) {
 					detail := s.devices[id].panelDetail(p.ctx, device)
 					detail.Image = p.icons[id].DetailImage
 					snapshot["detail"] = detail
+					p.lastDetails = map[string]panelReadings{id: detail}
 					break
 				}
 			}
 		}
+		p.lastSeen, p.lastIcons = now, p.icons
 		p.snapshotMu.Unlock()
 		reply(w, 200, snapshot)
 	case "POST /api/v1/panel/power":
@@ -139,6 +146,37 @@ func (s *Server) servePanel(w http.ResponseWriter, r *http.Request) {
 	default:
 		fail(w, 405, "Unsupported panel method")
 	}
+}
+
+// Show the last panel poll without waking hardware or counting a browser visit as contact.
+func (s *Server) remoteDisplay(w http.ResponseWriter, r *http.Request) {
+	p := s.panel
+	if p == nil {
+		fail(w, 404, "Panel access is disabled")
+		return
+	}
+	if r.Method != http.MethodGet {
+		fail(w, 405, "Use GET for remote display")
+		return
+	}
+	p.snapshotMu.Lock()
+	seen := p.lastSeen
+	var snapshot map[string]any
+	var stamp int64
+	if !seen.IsZero() {
+		stamp = seen.Unix()
+		snapshot = maps.Clone(p.snapshot)
+		devices := snapshot["devices"].([]panelDevice)
+		details := make(map[string]panelReadings, len(devices))
+		for _, device := range devices {
+			detail := p.lastDetails[device.ID]
+			detail.Image = p.lastIcons[device.ID].DetailImage
+			details[device.ID] = detail
+		}
+		snapshot["details"] = details
+	}
+	p.snapshotMu.Unlock()
+	reply(w, 200, map[string]any{"lastSeen": stamp, "connected": !seen.IsZero() && time.Since(seen) < time.Minute, "snapshot": snapshot})
 }
 
 // Take a nonblocking reading for every visible device. Artwork travels once per inventory revision.
