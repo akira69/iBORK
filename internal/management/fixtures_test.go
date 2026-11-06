@@ -59,6 +59,14 @@ func fixtureBMC(t *testing.T, privilege bmc.PrivilegeLevel) (Provider, *mock.HAL
 	admin.ChannelAccess[1] = bmc.UserChannelAccess{MaxPrivilege: privilege, Enabled: true}
 	reg := handlers.NewRegistry()
 	handlers.RegisterAllHandlers(reg)
+	reg.RegisterFunc(types.CommandGetDCMIPowerReading, func(_ context.Context, hctx *handlers.HandlerContext, _ []byte) ([]byte, types.CompletionCode, error) {
+		if hctx.Session.PrivilegeLevel < privilege {
+			return nil, types.CodeInsufficientPrivilege, nil
+		}
+		reading := make([]byte, 18)
+		reading[0], reading[1], reading[17] = 0xdc, 86, 1<<6
+		return reading, types.CodeOK, nil
+	})
 	reg.RegisterFunc(types.CommandGetSELInfo, func(context.Context, *handlers.HandlerContext, []byte) ([]byte, types.CompletionCode, error) {
 		return make([]byte, 14), types.CodeOK, nil
 	})
@@ -104,6 +112,15 @@ func fixtureBMC(t *testing.T, privilege bmc.PrivilegeLevel) (Provider, *mock.HAL
 	}
 	return p, h
 }
+func TestWattsSessionPrivilege(t *testing.T) {
+	for _, privilege := range []bmc.PrivilegeLevel{bmc.PrivilegeLevelUser, bmc.PrivilegeLevelAdministrator} {
+		p, _ := fixtureBMC(t, privilege)
+		if watts, err := p.Watts(context.Background()); watts != 86 || err != nil {
+			t.Errorf("privilege %v: got %v W, %v", privilege, watts, err)
+		}
+	}
+}
+
 func TestEmptySELCommand(t *testing.T) {
 	p, _ := fixtureBMC(t, bmc.PrivilegeLevelUser)
 	if _, err := p.Power(context.Background()); err != nil {
