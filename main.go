@@ -257,6 +257,9 @@ func run(logins *server.LoginState) error {
 		default:
 		}
 	}
+	if err := configureStoredSetting(settingsDir, "assistant.json", 8192, app.SetAssistantProvider); err != nil {
+		log.Print("Assistant provider storage unavailable")
+	}
 	app.SetDeviceSettings(&profileStore{dir: settingsDir, profiles: profiles}, reloadSettings)
 	app.SetPasswordSettings(func(hash string) error { return saveAppPasswordHash(settingsDir, hash) }, reloadSettings)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

@@ -35,44 +35,46 @@ type Config struct {
 	Timeout                                                         time.Duration
 }
 type session struct {
-	csrf    string
-	expires time.Time
-	ctx     context.Context
-	cancel  context.CancelFunc
+	assistant assistantSession
+	csrf      string
+	expires   time.Time
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 type cached struct {
 	value   any
 	expires time.Time
 }
 type Server struct {
-	panel        *panelAccess
-	settingsMu   sync.Mutex
-	rate         electricityRate // protected by mu
-	saveRate     func([]byte) error
-	savePassword func(string) error
-	settings     DeviceSettingsStore
-	reload       func()
-	devices      map[string]*Server
-	deviceOrder  []string
-	cfg          Config
-	provider     management.Provider
-	sensors      func(context.Context) ([]management.Sensor, error)
-	static       http.Handler
-	mu           sync.Mutex
-	closing      bool
-	reloading    bool
-	sessions     map[string]*session
-	loginWindow  time.Time
-	loginCount   int
-	cacheMu      sync.Mutex
-	cache        map[string]cached
-	jet          *jetRelay
-	readGate     chan struct{}
-	solGate      chan struct{}
-	vncGate      chan struct{}
-	jetGate      chan struct{}
-	glCheckGate  chan struct{}
-	lastAction   time.Time
+	assistantProvider providerSettings
+	panel             *panelAccess
+	settingsMu        sync.Mutex
+	rate              electricityRate // protected by mu
+	saveRate          func([]byte) error
+	savePassword      func(string) error
+	settings          DeviceSettingsStore
+	reload            func()
+	devices           map[string]*Server
+	deviceOrder       []string
+	cfg               Config
+	provider          management.Provider
+	sensors           func(context.Context) ([]management.Sensor, error)
+	static            http.Handler
+	mu                sync.Mutex
+	closing           bool
+	reloading         bool
+	sessions          map[string]*session
+	loginWindow       time.Time
+	loginCount        int
+	cacheMu           sync.Mutex
+	cache             map[string]cached
+	jet               *jetRelay
+	readGate          chan struct{}
+	solGate           chan struct{}
+	vncGate           chan struct{}
+	jetGate           chan struct{}
+	glCheckGate       chan struct{}
+	lastAction        time.Time
 
 	panelSensorScan, panelPowerScan panelRefresh // protected by cacheMu
 }
@@ -210,6 +212,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.static.ServeHTTP(w, r)
 		return
 	}
+	if r.URL.Path == "/api/assistant/mcp" {
+		s.serveMCP(w, r)
+		return
+	}
 	switch r.URL.Path {
 	case "/api/v1/panel", "/api/v1/panel/power", "/api/v1/panel/pin", "/api/v1/panel/display":
 		s.servePanel(w, r)
@@ -247,6 +253,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != "GET" && subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(sess.csrf)) != 1 {
 		fail(w, 403, "CSRF token rejected")
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/assistant/") {
+		s.serveAssistant(w, r, sess)
 		return
 	}
 	if r.URL.Path == "/api/device-settings" {

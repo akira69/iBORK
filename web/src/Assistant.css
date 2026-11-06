@@ -1,0 +1,43 @@
+.ibork-assistant {
+  margin-top: 1rem;
+  border-top: 1px solid currentColor;
+  padding-top: 0.65rem;
+}
+.ibork-assistant summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.ibork-assistant summary img {
+  object-fit: contain;
+  vertical-align: middle;
+}
+.assistant-body {
+  display: grid;
+  gap: 0.7rem;
+  min-width: 0;
+}
+.assistant-body details,
+.assistant-turn {
+  padding: 0.5rem 0;
+}
+.assistant-body label,
+.assistant-turn code {
+  display: block;
+  margin: 0.35rem 0;
+}
+.assistant-body input,
+.assistant-body textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+.assistant-body textarea {
+  min-height: 4rem;
+}
+.assistant-body code,
+.assistant-turn {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.assistant-body button {
+  margin: 0.2rem 0.3rem 0.2rem 0;
+}

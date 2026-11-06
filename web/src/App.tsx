@@ -1,3 +1,4 @@
+import { dashboardKey, endpointKeyFor } from "./device-identity";
 import {
   useEffect,
   lazy,
@@ -395,11 +396,10 @@ function Dashboard({
       cancelled = true;
     };
   }, [consoleStore, device.id, autoSources, view, tab, autoConnect]);
+  const [dashboardVersion, setDashboardVersion] = useState(0);
   const hasManagement = device.hasManagement !== false;
   const hasComet = sourcesFor(device).includes("glinet");
-  const endpointKey = hasManagement
-    ? `${device.bmcHost}:${device.bmcPort}`
-    : `device:${device.id}`;
+  const endpointKey = endpointKeyFor(device);
   const config = usePoll<Configuration>(apiPrefix + "config", 0);
   const power = usePoll<{ state: string }>(
     apiPrefix + "power",
@@ -884,8 +884,8 @@ function Dashboard({
                 vncAvailable={device.hasVNC}
                 cometAvailable={hasComet}
                 managementAvailable={hasManagement}
-                key={endpointKey}
-                storageKey={"jet-supermicro:dashboard:v1:" + endpointKey}
+                key={endpointKey + ":" + dashboardVersion}
+                storageKey={dashboardKey(device)}
                 onKindsChange={setWidgetKinds}
                 sensors={sensors.data ?? []}
                 onEditStart={() => consoleStore.setControl(null)}
@@ -1356,7 +1356,12 @@ function Dashboard({
                   saved on iBORK. Sidebar preferences apply to this browser.
                 </p>
                 <div className="settings-grid">
-                  <ConnectionSettings csrf={csrf} />
+                  <ConnectionSettings
+                    csrf={csrf}
+                    onLayout={(id) => {
+                      if (id === device.id) setDashboardVersion((v) => v + 1);
+                    }}
+                  />
                   <PasswordSettings csrf={csrf} onChanged={passwordChanged} />
                   <ElectricityRateSettings />
                   <SidebarSettings workspace={workspace} openServer={select} />

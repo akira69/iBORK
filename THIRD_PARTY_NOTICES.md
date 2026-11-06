@@ -49,6 +49,8 @@ by GPL-2.0. Dependency licenses also apply; consult package lock and module file
 
 ## Branding assets
 
+- `web/src/assets/assistant-brain.png`: the operator-supplied AI brain artwork, bundled locally for the optional assistant.
+
 - `web/src/assets/jetkvm.svg`: unchanged official `ui/src/assets/logo-white.svg`
   from the pinned JetKVM commit above.
 - `web/src/assets/supermicro.svg`: unchanged official green-orbit vector logo,

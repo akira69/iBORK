@@ -71,3 +71,13 @@ On supported JetKVM connections, virtual media can mount an HTTP or HTTPS ISO UR
 If a console is blank, check whether the KVM is connected and whether the server is sending a video signal. Check the selected server's connection settings, credentials and device reachability. A KVM-only entry has console tools without IPMI sensors, power or SOL.
 
 Use iBORK on your trusted management network or VPN. Sign out when finished, especially on a shared browser. Saved page preferences contain only navigation choices; they do not bypass sign-in or store your passwords.
+
+## iBORK Assistant
+
+Open iBORK settings and expand the brain icon under Add server for optional help. To chat here, open Model connection, enter an OpenAI-compatible /v1 endpoint and a tool-capable model ID, then choose Test & save model. Your messages, server names and device findings go to that provider. Suggested questions fill the message box so you can edit them before sending.
+
+To find devices, approve private IPv4 addresses or a subnet of up to 256 addresses under Discovery scope. Review a proposed server, enter its credentials in the connection form, and choose Verify, save & reconnect. Checks read BMC power status and check JetKVM access. A quiet device can still be added manually.
+
+To use your own agent, open Connect my agent (MCP) on the HTTPS site. Copy the configuration, create a temporary token, and enter it in your client's secret settings. An approved network enables discovery. Without one the agent can still read server names and propose layouts. Use Refresh proposals to review your agent's work. Changing scope, revoking the token or signing out ends its access.
+
+Ask the assistant to tidy one server's Console dashboard or copy the panel arrangement from one server to another. Preview shows the destination and proposed positions. Apply to this browser saves the arrangement for that server. Existing widgets and sensor selections belong to the destination. Repeat for additional servers.
