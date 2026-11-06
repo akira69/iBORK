@@ -247,12 +247,15 @@ func TestPanelCapturedReadingsAndCache(t *testing.T) {
 	first := fetch()
 	var v struct {
 		CapturedAt                             int64
-		Devices                                []struct{ Watts *float64 }
+		Devices                                []panelDevice
 		Day, Month                             []*float64
 		DayHours, MonthHours, DayKwh, MonthKwh float64
 	}
 	if err = json.Unmarshal([]byte(first), &v); err != nil {
 		t.Fatal(err)
+	}
+	if !v.Devices[0].Metered || v.Devices[1].Metered {
+		t.Fatal("meter flags do not match configured sources")
 	}
 	if v.CapturedAt < now.Unix() || v.Devices[0].Watts == nil || *v.Devices[0].Watts != 200 || v.Devices[1].Watts != nil {
 		t.Fatalf("unexpected snapshot: %+v", v)

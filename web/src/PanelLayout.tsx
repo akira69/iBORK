@@ -31,7 +31,7 @@ const homeNames: Record<string, string> = {
 const widgetNames: Record<string, string> = {
   power: "Power draw",
   temperature: "Temperature",
-  fan: "Fan speed",
+  fan: "Fan Speeds",
   controls: "Power controls",
 };
 

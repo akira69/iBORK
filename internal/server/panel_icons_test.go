@@ -6,6 +6,7 @@ import (
 	"errors"
 	"image"
 	"image/jpeg"
+	"strconv"
 	"testing"
 )
 
@@ -48,9 +49,50 @@ func TestPanelIconPublication(t *testing.T) {
 	if put([]panelIcon{icon}, csrf) != 200 || !bytes.Contains(snapshot(), []byte(`"label":"DB"`)) {
 		t.Fatal("missing new sidebar icon")
 	}
-	if err := s.SetPanelIcons(saved, nil); err != nil || s.panel.icons[icon.ID].Label != "DB" {
+	if err := s.SetPanelIcons(saved, s.panel.saveIcons); err != nil || s.panel.icons[icon.ID].Label != "DB" {
 		t.Fatal("could not restore icons", err)
 	}
+	icon.DetailImage = icon.Image
+	if put([]panelIcon{icon}, csrf) != 400 {
+		t.Fatal("accepted thumbnail as detail image")
+	}
+	var fullImage bytes.Buffer
+	if err := jpeg.Encode(&fullImage, image.NewRGBA(image.Rect(0, 0, 80, 80)), nil); err != nil {
+		t.Fatal(err)
+	}
+	icon.DetailImage = fullImage.Bytes()
+	if put([]panelIcon{icon}, csrf) != 200 || bytes.Contains(snapshot(), []byte("detailImage")) {
+		t.Fatal("detail artwork leaked into fleet snapshot")
+	}
+	var snap struct{ Detail panelReadings }
+	body := panelRequest(s, "GET", "/api/v1/panel?detail="+icon.ID, "", "Bearer "+key).Body.Bytes()
+	if json.Unmarshal(body, &snap) != nil || len(snap.Detail.Image) == 0 {
+		t.Fatal("selected artwork absent")
+	}
+
+	warm := func(rev string) (uint32, bool, bool) {
+		var result struct {
+			ArtRevision uint32
+			Details     map[string]panelReadings
+			Devices     []panelDevice
+		}
+		w := panelRequest(s, "GET", "/api/v1/panel?preload="+rev, "", "Bearer "+key)
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil || len(result.Devices) != 1 || result.Details[icon.ID].ID != icon.ID {
+			t.Fatal("missing fleet detail")
+		}
+		return result.ArtRevision, result.Devices[0].Sidebar != nil, len(result.Details[icon.ID].Image) > 0
+	}
+	rev, thumb, detail := warm("0")
+	if rev == 0 || !thumb || !detail {
+		t.Fatal("cold preload lost artwork")
+	}
+	if next, thumbAgain, detailAgain := warm(strconv.FormatUint(uint64(rev), 10)); next != rev || thumbAgain || detailAgain {
+		t.Fatal("unchanged artwork was resent")
+	}
+	if !bytes.Contains(snapshot(), []byte("sidebar")) {
+		t.Fatal("preload mutated the shared snapshot")
+	}
+
 	for _, bad := range [][]byte{nil, make([]byte, 2049), imageData.Bytes()[:20]} {
 		icon.Image = bad
 		if put([]panelIcon{icon}, csrf) != 400 {

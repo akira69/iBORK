@@ -7,11 +7,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"hash/crc32"
 	"maps"
 	"net"
 	"net/http"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -113,11 +115,15 @@ func (s *Server) servePanel(w http.ResponseWriter, r *http.Request) {
 			p.capturedAt = now
 		}
 		snapshot := p.snapshot
-		if id := r.URL.Query().Get("detail"); id != "" {
+		if revision := r.URL.Query().Get("preload"); revision != "" {
+			snapshot = s.preloadPanel(snapshot, revision)
+		} else if id := r.URL.Query().Get("detail"); id != "" {
 			for _, device := range snapshot["devices"].([]panelDevice) {
 				if device.ID == id {
 					snapshot = maps.Clone(snapshot)
-					snapshot["detail"] = s.devices[id].panelDetail(p.ctx, device)
+					detail := s.devices[id].panelDetail(p.ctx, device)
+					detail.Image = p.icons[id].DetailImage
+					snapshot["detail"] = detail
 					break
 				}
 			}
@@ -135,10 +141,47 @@ func (s *Server) servePanel(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Take a nonblocking reading for every visible device. Artwork travels once per inventory revision.
+func (s *Server) preloadPanel(base map[string]any, clientRevision string) map[string]any {
+	devices := slices.Clone(base["devices"].([]panelDevice))
+	details := make(map[string]panelReadings, len(devices))
+	sum := crc32.NewIEEE()
+	for _, device := range devices {
+		icon := s.panel.icons[device.ID]
+		sum.Write([]byte(device.ID + "\x00" + icon.Label + "\x00"))
+		sum.Write(icon.Image)
+		sum.Write(icon.DetailImage)
+		d := s.devices[device.ID]
+		detail := d.panelDetail(s.panel.ctx, device)
+		d.cacheMu.Lock()
+		detail.Pending = d.panelSensorScan.running || d.panelPowerScan.running
+		d.cacheMu.Unlock()
+		details[device.ID] = detail
+	}
+	revision := sum.Sum32()
+	if revision == 0 {
+		revision = 1
+	}
+	cached := clientRevision == strconv.FormatUint(uint64(revision), 10)
+	for i, device := range devices {
+		if cached {
+			devices[i].Sidebar = nil
+		} else {
+			detail := details[device.ID]
+			detail.Image = s.panel.icons[device.ID].DetailImage
+			details[device.ID] = detail
+		}
+	}
+	snapshot := maps.Clone(base)
+	snapshot["devices"], snapshot["details"], snapshot["artRevision"] = devices, details, revision
+	return snapshot
+}
+
 type panelDevice struct {
 	ID       string     `json:"id"`
 	Name     string     `json:"name"`
 	Model    string     `json:"model"`
+	Metered  bool       `json:"metered"`
 	Watts    *float64   `json:"watts"`
 	Controls bool       `json:"controls"`
 	Widgets  []string   `json:"widgets"`
@@ -167,8 +210,9 @@ func (s *Server) panelSnapshot(now time.Time) map[string]any {
 				}
 			}
 		}
-		device := panelDevice{ID: id, Name: d.cfg.ServerName, Model: d.cfg.Model, Watts: watts, Widgets: row.Widgets, Controls: slices.Contains(row.Widgets, "controls")}
+		device := panelDevice{ID: id, Name: d.cfg.ServerName, Model: d.cfg.Model, Watts: watts, Metered: d.cfg.History != nil, Widgets: row.Widgets, Controls: slices.Contains(row.Widgets, "controls")}
 		if icon, ok := s.panel.icons[id]; ok {
+			icon.DetailImage = nil // Only the selected device receives its full-size icon.
 			device.Sidebar = &icon
 		}
 		devices = append(devices, device)

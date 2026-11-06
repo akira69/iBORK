@@ -238,7 +238,7 @@ func run(logins *server.LoginState) error {
 		if err := configureStoredSetting(settingsDir, "panel-display.json", 4096, app.SetPanelDisplay); err != nil {
 			return err
 		}
-		if err := configureStoredSetting(settingsDir, "panel-icons.json", 48*1024, app.SetPanelIcons); err != nil {
+		if err := configureStoredSetting(settingsDir, "panel-icons.json", server.PanelIconConfigLimit, app.SetPanelIcons); err != nil {
 			return err
 		}
 		if err := configureStoredSetting(settingsDir, "panel-layout.json", 4096, app.SetPanelLayout); err != nil {
