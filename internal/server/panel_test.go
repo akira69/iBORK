@@ -25,6 +25,51 @@ func panelRequest(s *Server, method, path, body, auth string) *httptest.Response
 	return w
 }
 
+func TestRemoteDisplayObservesOnlyAuthenticatedPanelPolls(t *testing.T) {
+	s, _ := testServer(t)
+	c, _ := login(t, s)
+	const path = "/api/remote-display"
+	get := func() *httptest.ResponseRecorder { return request(s, "GET", path, "", c, "", "") }
+	if get().Code != 404 {
+		t.Fatal("disabled display reported")
+	}
+	s.cfg.Origin = "https://localhost:8080"
+	key := token()
+	if err := s.EnablePanel(key, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if panelRequest(s, "GET", path, "", "Bearer "+key).Code != 401 {
+		t.Fatal("preview requires dashboard sign-in")
+	}
+	panelRequest(s, "GET", "/api/v1/panel", "", "Bearer invalid")
+	read := func() (bool, int64, map[string]any) {
+		t.Helper()
+		w := get()
+		var status struct {
+			Connected bool
+			LastSeen  int64
+			Snapshot  map[string]any
+		}
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &status) != nil {
+			t.Fatal(w.Code, w.Body.String())
+		}
+		return status.Connected, status.LastSeen, status.Snapshot
+	}
+	if connected, seen, snap := read(); connected || seen != 0 || snap != nil {
+		t.Fatal("invented panel contact")
+	}
+	if w := panelRequest(s, "GET", "/api/v1/panel?preload=0", "", "Bearer "+key); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	if connected, seen, snap := read(); !connected || seen == 0 || snap["details"] == nil || snap["devices"] == nil {
+		t.Fatal("missing panel telemetry")
+	}
+	s.panel.lastSeen = time.Now().Add(-2 * time.Minute)
+	if connected, _, snap := read(); connected || snap == nil {
+		t.Fatal("status read refreshed stale panel")
+	}
+}
+
 func TestPanelCredentialsScopeAndSnapshot(t *testing.T) {
 	s, _ := testServer(t)
 	key := token()

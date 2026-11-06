@@ -9,6 +9,9 @@ import {
 import { api, APIError } from "./api";
 import type { Workspace } from "./DeviceWorkspace";
 import { PanelLayoutPreview } from "./PanelLayoutPreview";
+import { PanelDisplaySettings } from "./PanelDisplaySettings";
+import { usePoll } from "./usePoll";
+import type { RemoteDisplayStatus } from "./remote-display";
 import "./panel-layout.css";
 
 export type PanelServer = {
@@ -162,12 +165,16 @@ export function PanelLayoutSettings({
   csrf,
   workspace,
   children,
+  settingsRequest = 0,
 }: {
   csrf: string;
   workspace?: Workspace;
   children: ReactNode;
+  settingsRequest?: number;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openedAt, setOpenedAt] = useState<number | null>(null);
+  const open = openedAt === settingsRequest;
+  const remote = usePoll<RemoteDisplayStatus>("remote-display", 15000, open);
   const [saved, setSaved] = useState<PanelLayout | null>();
   const [draft, setDraft] = useState<PanelLayout>();
   const [reload, setReload] = useState(0);
@@ -205,7 +212,7 @@ export function PanelLayoutSettings({
         if (controller.signal.aborted) return;
         if (e instanceof APIError && e.status === 404) {
           setSaved(null);
-          setOpen(false);
+          setOpenedAt(null);
         } else
           setError(
             `Could not load the panel layout. ${e instanceof Error ? e.message : "Try again."}`,
@@ -260,7 +267,7 @@ export function PanelLayoutSettings({
         );
       } else if (e instanceof APIError && e.status === 404) {
         setSaved(null);
-        setOpen(false);
+        setOpenedAt(null);
       } else
         setError(
           `Could not confirm the layout was saved. ${e instanceof Error ? e.message : "Try again."}`,
@@ -273,9 +280,12 @@ export function PanelLayoutSettings({
     return (
       <>
         {saved && (
-          <button className="cl-entry" onClick={() => setOpen(true)}>
+          <button
+            className="cl-entry"
+            onClick={() => setOpenedAt(settingsRequest)}
+          >
             <PanelsTopLeft size={17} />
-            Edit display layout{dirty && " · unsaved edits"}
+            Remote display{dirty && " · unsaved edits"}
           </button>
         )}
         {!saved && saved !== null && error && (
@@ -300,16 +310,34 @@ export function PanelLayoutSettings({
   }
   return (
     <section className="cl-editor" aria-label="Display layout editor">
-      <button className="cl-back" onClick={() => setOpen(false)}>
+      <button className="cl-back" onClick={() => setOpenedAt(null)}>
         <ArrowLeft size={15} />
         Back to iBORK settings
       </button>
       <header className="cl-heading">
         <div>
-          <h2>Display layout</h2>
+          <h2>Remote display</h2>
           <p>
-            Choose the Home sections, server tiles, and widgets shown on the
-            touchscreen.
+            {remote.error
+              ? "Connection status unavailable"
+              : !remote.data
+                ? "Checking panel connection…"
+                : remote.data.connected
+                  ? "Connected"
+                  : remote.data.lastSeen
+                    ? "No recent panel contact"
+                    : "Waiting for the first panel connection"}
+            {remote.data?.lastSeen ? (
+              <>
+                {" "}
+                · Last panel request{" "}
+                <time
+                  dateTime={new Date(remote.data.lastSeen * 1000).toISOString()}
+                >
+                  {new Date(remote.data.lastSeen * 1000).toLocaleString()}
+                </time>
+              </>
+            ) : null}
           </p>
         </div>
         <div>
@@ -442,6 +470,7 @@ export function PanelLayoutSettings({
           </fieldset>
         </section>
         <PanelLayoutPreview
+          status={remote.data}
           layout={draft}
           workspace={workspace}
           detail={tab === "servers" ? selected : undefined}
@@ -452,6 +481,7 @@ export function PanelLayoutSettings({
           }}
         />
       </div>
+      <PanelDisplaySettings csrf={csrf} workspace={workspace} />
     </section>
   );
 }

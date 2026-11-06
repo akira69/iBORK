@@ -1,5 +1,15 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { setup } from "./fixtures";
+
+async function enabledLayout(page: Page) {
+  await page.route("**/api/panel-layout", (route) =>
+    route.fulfill({ json: { revision: 1, home: ["power"], servers: [] } }),
+  );
+
+  await page.route("**/api/remote-display", (route) =>
+    route.fulfill({ json: { connected: false, lastSeen: 0 } }),
+  );
+}
 
 const defaults = [
   { start: 60, brightness: 0 },
@@ -31,9 +41,11 @@ test("four panel periods retain drafts on conflict and use the freshly loaded re
     revision += 3;
     return route.fulfill({ json: { ok: true } });
   });
+  await enabledLayout(page);
   await page
     .getByRole("button", { name: "iBORK settings", exact: true })
     .click();
+  await page.getByRole("button", { name: "Remote display" }).click();
   const card = page.getByRole("region", { name: "Display settings" });
   const start = card.getByLabel("Start time");
   const mode = card.getByRole("combobox", { name: "Display", exact: true });
@@ -95,7 +107,9 @@ test("empty fleet hides disabled panels and recovers from load and save failures
       ? route.abort("timedout")
       : route.fulfill({ json: { revision: 1, periods: defaults } }),
   );
+  await enabledLayout(page);
   await page.reload();
+  await page.getByRole("button", { name: "Remote display" }).click();
   await expect(card.getByRole("alert")).toContainText("Could not load");
   fail = false;
   await card.getByRole("button", { name: "Retry loading schedule" }).click();
@@ -148,9 +162,11 @@ test("publish copies custom, preset and initials icons with bounded JPEGs and Un
     fail ? route.abort("timedout") : route.fulfill({ json: { ok: true } }),
   );
   await page.reload();
+  await enabledLayout(page);
   await page
     .getByRole("button", { name: "iBORK settings", exact: true })
     .click();
+  await page.getByRole("button", { name: "Remote display" }).click();
   const copy = page.getByRole("button", {
     name: "Copy sidebar icons to panel",
   });

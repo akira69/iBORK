@@ -1,8 +1,13 @@
 // Keep display copy and editable prompts separate from stable tool and route names.
 const en = {
   title: "iBORK Assistant",
+  settings: "Assistant settings",
+  retry: "Retry loading assistant",
+  close: "Close assistant",
   intro: "Optional help with devices and dashboard layouts.",
   provider: "Model connection",
+  setupModel:
+    "Open Model connection to configure a provider before sending your first question.",
   endpoint: "OpenAI-compatible endpoint (/v1)",
   model: "Model ID",
   key: "API key (optional)",
@@ -61,6 +66,11 @@ const en = {
 };
 const es: typeof en = {
   title: "Asistente de iBORK",
+  setupModel:
+    "Abre los ajustes del modelo para configurar un proveedor antes de enviar tu primera pregunta.",
+  settings: "Ajustes del asistente",
+  retry: "Volver a cargar el asistente",
+  close: "Cerrar asistente",
   intro: "Ayuda opcional con dispositivos y paneles.",
   provider: "Conexión del modelo",
   endpoint: "Dirección compatible con OpenAI (/v1)",

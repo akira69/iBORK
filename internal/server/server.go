@@ -271,6 +271,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.panel.displaySettings(w, r, false)
 		return
 	}
+	if r.URL.Path == "/api/remote-display" {
+		s.remoteDisplay(w, r)
+		return
+	}
 	if r.URL.Path == "/api/panel-layout" {
 		s.panelLayoutSettings(w, r, sess.ctx)
 		return

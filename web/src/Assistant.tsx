@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
+import { ReviewedConnection } from "./ConnectionSettings";
+import type { SettingsSection } from "./AssistantDrawer";
 import { api } from "./api";
 import { assistantCopy } from "./assistant-copy";
 import { previewLayout } from "./assistant-layout";
@@ -29,34 +32,61 @@ type Turn = {
 };
 export default function Assistant({
   csrf,
-  review,
+  host,
+  link,
+  opened,
   onLayout,
 }: {
   csrf: string;
-  review: (draft: Draft) => ReactNode;
+  host: HTMLDivElement | null;
+  link?: { section: SettingsSection; request: number };
+  opened: boolean;
   onLayout?: (id: string) => void;
 }) {
   const t = assistantCopy(navigator.language);
-  const [status, setStatus] = useState<State>(),
-    [base, setBase] = useState(""),
-    [model, setModel] = useState(""),
-    [key, setKey] = useState(""),
-    [hasKey, setHasKey] = useState(false);
-  const [savedModel, setSavedModel] = useState({ base: "", model: "" });
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [status, setStatus] = useState<State>();
+  const [savedModel, setSavedModel] = useState({
+    base: "",
+    model: "",
+    hasKey: false,
+  });
   const [revision, setRevision] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [scope, setScope] = useState(""),
-    [message, setMessage] = useState(""),
+  const [message, setMessage] = useState(""),
     [chat, setChat] = useState<{ question: string; result: Turn }[]>([]);
   const [note, setNote] = useState(""),
     [busy, setBusy] = useState(false),
-    [secret, setSecret] = useState(""),
     [reviewing, setReviewing] = useState(false),
     [preview, setPreview] = useState<ReturnType<typeof previewLayout>>();
   const active = useRef<AbortController | null>(null);
+  const lastLink = useRef(0);
+  const transcript = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!host || !link || lastLink.current === link.request) return;
+    const outer = host.closest("details");
+    const section = host.querySelector<HTMLDetailsElement>(
+      `[data-section="${link.section}"]`,
+    );
+    if (!outer) return;
+    outer.open = true;
+    if (!section) {
+      outer.querySelector("summary")?.focus();
+      return;
+    }
+    lastLink.current = link.request;
+    section.open = true;
+    section.querySelector("summary")?.focus();
+    section.scrollIntoView({ block: "center" });
+  }, [host, link, status]);
+  useEffect(() => {
+    if (opened && transcript.current)
+      transcript.current.scrollTop = transcript.current.scrollHeight;
+  }, [chat, opened]);
   useEffect(() => {
     const controller = new AbortController();
-    api<Status>("assistant/status", { signal: controller.signal })
+    api<Status>("assistant/status", {
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
+    })
       .then((s) => {
         if (controller.signal.aborted) return;
         setStatus(s.state);
@@ -77,12 +107,8 @@ export default function Assistant({
               : [],
           ),
         );
-        setBase(s.baseUrl);
         setRevision(s.revision);
-        setModel(s.model);
-        setSavedModel({ base: s.baseUrl, model: s.model });
-        setHasKey(s.hasKey);
-        setScope(s.state.scope);
+        setSavedModel({ base: s.baseUrl, model: s.model, hasKey: s.hasKey });
       })
       .catch((e) => {
         if (!controller.signal.aborted) setNote(String(e));
@@ -91,7 +117,17 @@ export default function Assistant({
       controller.abort();
       active.current?.abort();
     };
-  }, []);
+  }, [loadAttempt]);
+  const retryStatus = !status && note && (
+    <button
+      onClick={() => {
+        setNote("");
+        setLoadAttempt((n) => n + 1);
+      }}
+    >
+      {t.retry}
+    </button>
+  );
   async function run(fn: (signal: AbortSignal) => Promise<void>) {
     if (active.current) return;
     const controller = new AbortController();
@@ -125,18 +161,251 @@ export default function Assistant({
     setPreview(undefined);
     setReviewing(false);
   }
-  const canSend =
-    !!message.trim() &&
-    !!status &&
-    !!savedModel.model &&
-    base === savedModel.base &&
-    model === savedModel.model &&
-    !key &&
-    !busy;
+  const canSend = !!message.trim() && !!status && !!savedModel.model && !busy;
   return (
-    <section className="assistant-body">
-      <p>{t.intro}</p>
-      <details>
+    <>
+      {host &&
+        createPortal(
+          status ? (
+            <AssistantSettings
+              provider={savedModel}
+              approvedScope={status.scope}
+              busy={busy}
+              feedback={busy ? t.busy : note}
+              setNote={setNote}
+              run={run}
+              post={post}
+              onProvider={(provider, rev) => {
+                setRevision(rev);
+                setSavedModel(provider);
+                setChat([]);
+              }}
+              onScope={(next) => {
+                update(next);
+                setChat([]);
+              }}
+            />
+          ) : (
+            <>
+              <p role="status">{note || t.checking}</p>
+              {retryStatus}
+            </>
+          ),
+          host,
+        )}
+      <div
+        className="assistant-transcript assistant-body"
+        ref={transcript}
+        role="region"
+        aria-label={t.chat}
+        tabIndex={0}
+      >
+        <p>{t.privacy}</p>
+        {retryStatus}
+        {status && !savedModel.model && <p>{t.setupModel}</p>}
+        {savedModel.model && (
+          <p>
+            {t.provider}: {savedModel.model} · {savedModel.base}
+          </p>
+        )}
+        <details>
+          <summary>{t.suggest}</summary>
+          {[t.find, t.pairKvm, t.status, t.tidy, t.sync].map((label, i) => (
+            <button key={label} onClick={() => setMessage(t.prompts[i])}>
+              {label}
+            </button>
+          ))}
+        </details>
+        <div role="log" aria-label={t.chat}>
+          {chat.map(({ question, result }, i) => (
+            <div className="assistant-turn" key={i}>
+              <strong>{question}</strong>
+              {result.activity?.map((a, j) => (
+                <code key={j}>
+                  {a.name}
+                  {a.failed ? " ×" : " ✓"}
+                </code>
+              ))}
+              <p>{result.reply || result.error}</p>
+            </div>
+          ))}
+        </div>
+        <button
+          disabled={busy || !status}
+          onClick={() =>
+            run(async (signal) =>
+              update((await api<Status>("assistant/status", { signal })).state),
+            )
+          }
+        >
+          {t.refresh}
+        </button>
+        {!!status?.candidates?.length && (
+          <ul>
+            {status.candidates.map((c) => (
+              <li key={c.id}>
+                {c.address} · {c.evidence}
+              </li>
+            ))}
+          </ul>
+        )}
+        {status?.draft && (
+          <section>
+            <h4>
+              {t.server}: {status.draft.name}
+            </h4>
+            <p>
+              {[status.draft.host, status.draft.jetUrl]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+            <button onClick={() => setReviewing(!reviewing)}>
+              {reviewing ? t.discard : t.review}
+            </button>
+            {reviewing && (
+              <ReviewedConnection draft={status.draft} csrf={csrf} />
+            )}
+          </section>
+        )}
+        {status?.layout && (
+          <section>
+            <h4>{t.layouts}</h4>
+            <p>
+              {t.source}: {status.servers[status.layout.source]} · {t.target}:{" "}
+              {status.servers[status.layout.target]}
+            </p>
+            <button
+              disabled={busy}
+              onClick={() =>
+                run(async (signal) => {
+                  const list = await api<Device[]>("devices", { signal });
+                  const source = list.find(
+                      (d) => d.id === status.layout!.source,
+                    ),
+                    target = list.find((d) => d.id === status.layout!.target);
+                  if (!source || !target) throw Error(t.error);
+                  setPreview(previewLayout(source, target));
+                })
+              }
+            >
+              {t.preview}
+            </button>
+            {preview && (
+              <>
+                {preview.changes.length ? (
+                  <>
+                    <p>{t.change}</p>
+                    <ul>
+                      {preview.changes.map((w) => (
+                        <li key={w.id}>
+                          {catalog[w.kind].title} · ({w.x},{w.y}) · {w.w} ×{" "}
+                          {w.h}
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      onClick={() => {
+                        try {
+                          preview.apply();
+                          setNote(t.done);
+                          onLayout?.(status.layout!.target);
+                        } catch (e) {
+                          setNote(String(e));
+                        }
+                        setPreview(undefined);
+                      }}
+                    >
+                      {t.apply}
+                    </button>
+                  </>
+                ) : (
+                  <p>{t.nothing}</p>
+                )}
+              </>
+            )}
+          </section>
+        )}
+      </div>
+      <div className="assistant-composer assistant-body">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const question = message.trim();
+            if (!canSend) return;
+            void run(async (signal) => {
+              const result = await post<Turn>(
+                "chat",
+                { message: question, language: navigator.language, revision },
+                signal,
+              );
+              update(result.state);
+              setChat((old) => [...old.slice(-19), { question, result }]);
+              setMessage("");
+            });
+          }}
+        >
+          <label>
+            {t.question}
+            <textarea
+              maxLength={2000}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+            />
+          </label>
+          <button disabled={!canSend}>{t.send}</button>
+          {busy && (
+            <button
+              type="button"
+              onClick={() => {
+                active.current?.abort();
+                setNote(t.stopped);
+              }}
+            >
+              {t.stop}
+            </button>
+          )}
+        </form>
+        <p role="status">{busy ? t.busy : note}</p>
+      </div>
+    </>
+  );
+}
+
+function AssistantSettings({
+  provider,
+  approvedScope,
+  busy,
+  feedback,
+  setNote,
+  run,
+  post,
+  onProvider,
+  onScope,
+}: {
+  provider: { base: string; model: string; hasKey: boolean };
+  approvedScope: string;
+  busy: boolean;
+  feedback: string;
+  setNote: (message: string) => void;
+  run: (fn: (signal: AbortSignal) => Promise<void>) => Promise<void>;
+  post: <T>(path: string, body: unknown, signal: AbortSignal) => Promise<T>;
+  onProvider: (
+    provider: { base: string; model: string; hasKey: boolean },
+    revision: string,
+  ) => void;
+  onScope: (state: State) => void;
+}) {
+  const t = assistantCopy(navigator.language);
+  const [base, setBase] = useState(provider.base);
+  const [model, setModel] = useState(provider.model);
+  const [hasKey, setHasKey] = useState(provider.hasKey);
+  const [key, setKey] = useState("");
+  const [scope, setScope] = useState(approvedScope);
+  const [secret, setSecret] = useState("");
+  const [expiry, setExpiry] = useState("");
+  return (
+    <div className="assistant-body">
+      <details data-section="provider">
         <summary>{t.provider}</summary>
         <label>
           {t.endpoint}
@@ -165,7 +434,7 @@ export default function Assistant({
         </label>
         {hasKey && <p>{t.retained}</p>}
         <button
-          disabled={busy || !status || !model || !base}
+          disabled={busy || !model || !base}
           onClick={() =>
             run(async (signal) => {
               const saved = await post<{ revision: string }>(
@@ -173,11 +442,12 @@ export default function Assistant({
                 { baseUrl: base, model, key },
                 signal,
               );
-              setRevision(saved.revision);
-              setSavedModel({ base, model });
+              onProvider(
+                { base, model, hasKey: !!key || hasKey },
+                saved.revision,
+              );
               setKey("");
               setHasKey(!!key || hasKey);
-              setChat([]);
               setNote(t.tested);
             })
           }
@@ -185,7 +455,7 @@ export default function Assistant({
           {t.test}
         </button>
       </details>
-      <details>
+      <details data-section="scope">
         <summary>{t.scope}</summary>
         <label>
           {t.hosts}
@@ -195,8 +465,7 @@ export default function Assistant({
           disabled={busy || !scope}
           onClick={() =>
             run(async (signal) => {
-              update(await post<State>("scope", { scope }, signal));
-              setChat([]);
+              onScope(await post<State>("scope", { scope }, signal));
               setSecret("");
               setNote(t.scopeSaved);
             })
@@ -206,9 +475,9 @@ export default function Assistant({
         </button>
       </details>
       <p>
-        {t.scopeLabel}: {status?.scope || t.noScope}
+        {t.scopeLabel}: {approvedScope || t.noScope}
       </p>
-      <details>
+      <details data-section="connect">
         <summary>{t.connect}</summary>
         <p>{t.pairHelp}</p>
         <textarea
@@ -233,11 +502,10 @@ export default function Assistant({
             disabled={busy}
             onClick={() =>
               run(async (signal) => {
-                const pair = await post<{ token: string; expires: string }>(
-                  "pair",
-                  {},
-                  signal,
-                );
+                const pair = await post<{
+                  token: string;
+                  expires: string;
+                }>("pair", {}, signal);
                 setSecret(pair.token);
                 setExpiry(new Date(pair.expires).toLocaleTimeString());
               })
@@ -273,162 +541,7 @@ export default function Assistant({
           />
         )}
       </details>
-      <h3>{t.chat}</h3>
-      <p>{t.privacy}</p>
-      {savedModel.model && (
-        <p>
-          {t.provider}: {savedModel.model} · {savedModel.base}
-        </p>
-      )}
-      {chat.map(({ question, result }, i) => (
-        <div className="assistant-turn" key={i}>
-          <strong>{question}</strong>
-          {result.activity?.map((a, j) => (
-            <code key={j}>
-              {a.name}
-              {a.failed ? " ×" : " ✓"}
-            </code>
-          ))}
-          <p>{result.reply || result.error}</p>
-        </div>
-      ))}
-      <details>
-        <summary>{t.suggest}</summary>
-        {[t.find, t.pairKvm, t.status, t.tidy, t.sync].map((label, i) => (
-          <button key={label} onClick={() => setMessage(t.prompts[i])}>
-            {label}
-          </button>
-        ))}
-      </details>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          const question = message.trim();
-          if (!canSend) return;
-          void run(async (signal) => {
-            const result = await post<Turn>(
-              "chat",
-              { message: question, language: navigator.language, revision },
-              signal,
-            );
-            update(result.state);
-            setChat((old) => [...old.slice(-19), { question, result }]);
-            setMessage("");
-          });
-        }}
-      >
-        <label>
-          {t.question}
-          <textarea
-            maxLength={2000}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-          />
-        </label>
-        <button disabled={!canSend}>{t.send}</button>
-        {busy && (
-          <button
-            type="button"
-            onClick={() => {
-              active.current?.abort();
-              setNote(t.stopped);
-            }}
-          >
-            {t.stop}
-          </button>
-        )}
-      </form>
-      <button
-        disabled={busy}
-        onClick={() =>
-          run(async (signal) =>
-            update((await api<Status>("assistant/status", { signal })).state),
-          )
-        }
-      >
-        {t.refresh}
-      </button>
-      {!!status?.candidates?.length && (
-        <ul>
-          {status.candidates.map((c) => (
-            <li key={c.id}>
-              {c.address} · {c.evidence}
-            </li>
-          ))}
-        </ul>
-      )}
-      {status?.draft && (
-        <section>
-          <h4>
-            {t.server}: {status.draft.name}
-          </h4>
-          <p>
-            {[status.draft.host, status.draft.jetUrl]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
-          <button onClick={() => setReviewing(!reviewing)}>
-            {reviewing ? t.discard : t.review}
-          </button>
-          {reviewing && review(status.draft)}
-        </section>
-      )}
-      {status?.layout && (
-        <section>
-          <h4>{t.layouts}</h4>
-          <p>
-            {t.source}: {status.servers[status.layout.source]} · {t.target}:{" "}
-            {status.servers[status.layout.target]}
-          </p>
-          <button
-            disabled={busy}
-            onClick={() =>
-              run(async (signal) => {
-                const list = await api<Device[]>("devices", { signal });
-                const source = list.find((d) => d.id === status.layout!.source),
-                  target = list.find((d) => d.id === status.layout!.target);
-                if (!source || !target) throw Error(t.error);
-                setPreview(previewLayout(source, target));
-              })
-            }
-          >
-            {t.preview}
-          </button>
-          {preview && (
-            <>
-              {preview.changes.length ? (
-                <>
-                  <p>{t.change}</p>
-                  <ul>
-                    {preview.changes.map((w) => (
-                      <li key={w.id}>
-                        {catalog[w.kind].title} · ({w.x},{w.y}) · {w.w} × {w.h}
-                      </li>
-                    ))}
-                  </ul>
-                  <button
-                    onClick={() => {
-                      try {
-                        preview.apply();
-                        setNote(t.done);
-                        onLayout?.(status.layout!.target);
-                      } catch (e) {
-                        setNote(String(e));
-                      }
-                      setPreview(undefined);
-                    }}
-                  >
-                    {t.apply}
-                  </button>
-                </>
-              ) : (
-                <p>{t.nothing}</p>
-              )}
-            </>
-          )}
-        </section>
-      )}
-      <p role="status">{busy ? t.busy : note}</p>
-    </section>
+      <p role="status">{feedback}</p>
+    </div>
   );
 }

@@ -194,245 +194,454 @@
 }
 .cl-bezel.cl-native {
   box-sizing: content-box;
+  width: 800px;
   padding: 24px;
 }
 .cl-glass {
   width: 100%;
+  aspect-ratio: 800 / 480;
   position: relative;
   overflow: hidden;
   border-radius: 5px;
-  background: #10181e;
+  background: #0a131e;
 }
 .cl-screen {
+  --screen-bg: #0a131e;
+  --surface: #192b39;
+  --panel-ink: #f2f7f8;
+  --panel-muted: #aac1cc;
+  --mint: #64efc4;
+  --gold: #ffbc66;
+  width: 800px;
+  height: 480px;
   position: absolute;
-  left: 0;
-  top: 0;
+  inset: 0;
   transform-origin: top left;
-  color: #f0f4f6;
-  background: #10181e;
-  display: flex;
-  flex-direction: column;
+  font:
+    500 16px/1.25 Inter,
+    Arial,
+    sans-serif;
+  color: var(--panel-ink);
+  background: var(--screen-bg);
 }
-.cl-screenbar {
-  display: flex;
-  align-items: center;
-  flex: 0 0 70px;
-  padding: 0 16px;
-  gap: 22px;
-  background: #18242b;
-  border-bottom: 1px solid #34424b;
+.cl-screen[data-palette="Amber"] {
+  --screen-bg: #1d1711;
+  --surface: #352d22;
+  --mint: #ffbf69;
 }
-.cl-screenbar button {
+.cl-screen[data-palette="Ice"] {
+  --screen-bg: #101a29;
+  --surface: #223649;
+  --mint: #9bccff;
+}
+.cl-screen[data-palette="Crimson"] {
+  --screen-bg: #220e15;
+  --surface: #441c29;
+  --mint: #ff6378;
+}
+.cl-screen button {
+  font: inherit;
+  color: inherit;
+  padding: 0;
   border: 0;
-  background: none;
-  padding: 8px;
-  font-weight: 650;
-  font-size: 19px;
+  background: var(--surface);
+  border-radius: 10px;
 }
-.cl-screenbar button:first-child {
-  font-size: 23px;
+.cl-screen button:hover:enabled {
+  background: var(--surface);
+  outline: 1px solid var(--panel-muted);
 }
-.cl-screenbar select {
-  min-width: 190px;
-  max-width: 280px;
-  font-size: 18px;
-  padding: 6px 12px;
+.cl-screen button:focus-visible {
+  outline-offset: -2px;
 }
-.cl-linked {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
+.cl-screen h3,
+.cl-screen h4,
+.cl-screen b,
+.cl-screen strong,
+.cl-screen em {
+  font-weight: 500;
+  font-style: normal;
+  margin: 0;
+}
+.cl-screen h3 {
+  font-size: 40px;
+}
+.cl-screen h4 {
+  font-size: 25px;
+}
+.cl-screen small,
+.cl-tiles p,
+.cl-widgets p {
+  color: var(--panel-muted);
   font-size: 16px;
 }
-.cl-linked svg {
-  color: #52dd87;
+.cl-screenbar {
+  position: relative;
+  height: 70px;
+  background: #101c29;
+  border-bottom: 1px solid #344959;
+}
+.cl-screenbar > *,
+.cl-power > *,
+.cl-chart > *,
+.cl-settings-page > *,
+.cl-detail > *,
+.cl-switch > * {
+  position: absolute;
+}
+.cl-logo {
+  left: 8px;
+  top: 1px;
+}
+.cl-finch {
+  left: 722px;
+  top: 1px;
+}
+.cl-screenbar > b {
+  left: 82px;
+  top: 17px;
+  font-size: 25px;
+}
+.cl-screenbar .cl-nav {
+  left: 198px;
+  top: 10px;
+  width: 108px;
+  height: 48px;
+  font-size: 25px;
+  justify-content: flex-start;
+  padding-left: 12px;
+}
+.cl-screenbar .cl-health {
+  left: 315px;
+  top: 24px;
+  width: 181px;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--gold);
+}
+.cl-link {
+  left: 520px;
+  top: 10px;
+  width: 110px;
+  height: 49px;
+}
+.cl-gear {
+  left: 645px;
+  top: 8px;
+  width: 60px;
+  height: 54px;
 }
 .cl-screen-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
+  height: 410px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
   padding: 8px 16px 0;
   display: flex;
-  flex-direction: column;
+  flex-flow: column nowrap;
   gap: 12px;
-  scrollbar-width: thin;
 }
 .cl-screen-body > * {
   flex-shrink: 0;
 }
+.cl-power,
+.cl-chart,
+.cl-tiles button,
+.cl-stat,
+.cl-switch,
+.cl-settings-page > div {
+  background: var(--surface);
+  border-radius: 10px;
+}
 .cl-power {
-  height: 63px;
-  display: grid;
-  grid-template-columns: 360px 298px 1fr;
-  align-items: stretch;
-  gap: 12px;
+  position: relative;
+  height: 70px;
 }
-.cl-power > div {
-  border-radius: 8px;
-  padding: 4px 14px;
-  background: #22303b;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-.cl-power > div:first-child {
-  background: #71e5be;
-  color: #102e27;
-  font-weight: 650;
+.cl-power small {
+  left: 14px;
+  top: 6px;
 }
 .cl-power strong {
-  font-size: 23px;
-  line-height: 1.05;
+  left: 14px;
+  top: 24px;
+  color: var(--mint);
+  font-size: 40px;
 }
-.cl-power > div:first-child strong {
-  font-size: 33px;
+.cl-power img {
+  left: 275px;
+  top: 3px;
 }
-.cl-power > small {
-  align-self: center;
+.cl-power span,
+.cl-power b {
+  left: 348px;
 }
-.cl-screen small {
-  font-size: 14px;
-  color: #afbec7;
+.cl-power span {
+  top: 10px;
+  color: var(--panel-muted);
+}
+.cl-power b {
+  top: 34px;
+}
+.cl-power em {
+  left: 634px;
+  top: 17px;
+  border: 1px solid #64efc4;
+  border-radius: 10px;
+  width: 118px;
+  height: 36px;
+  padding: 6px 12px;
 }
 .cl-chart-row {
   display: flex;
   gap: 16px;
 }
 .cl-chart {
-  height: 145px;
-  min-width: 0;
+  position: relative;
   flex: 1;
-  padding: 8px 15px;
-  border: 1px solid #34434d;
-  border-radius: 9px;
-  background: #1b272f;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-}
-.cl-chart header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.cl-chart h4,
-.cl-chart header strong {
-  margin: 0;
-  font-size: 23px;
-}
-.cl-chart {
-  color: #76e6be;
+  min-width: 0;
+  height: 145px;
+  color: var(--mint);
 }
 .cl-chart.cl-month {
-  color: #ecd779;
+  color: var(--gold);
 }
 .cl-chart h4 {
-  color: #f0f4f6;
+  left: 15px;
+  top: 8px;
+  color: var(--panel-ink);
+}
+.cl-chart strong {
+  right: 12px;
+  width: 156px;
+  top: 11px;
+  font-size: 25px;
+}
+.cl-chart small {
+  left: 16px;
+  top: 45px;
 }
 .cl-chart svg {
-  display: block;
-  width: 100%;
+  left: 14px;
+  top: 67px;
   height: 48px;
+  width: calc(100% - 28px);
+}
+.cl-chart small:last-child {
+  top: 118px;
 }
 .cl-tiles {
   display: grid;
   grid-template-columns: repeat(4, 188px);
   gap: 6px;
 }
-.cl-tiles > p {
-  grid-column: 1 / -1;
+.cl-tiles p {
+  grid-column: 1/-1;
+  padding: 6px;
+  font-size: 25px;
 }
 .cl-tiles button {
-  display: flex;
+  position: relative;
   height: 50px;
-  padding: 4px;
-  justify-content: flex-start;
-  gap: 6px;
   text-align: left;
-  background: #192b39;
 }
-.cl-icon {
-  display: grid;
-  place-items: center;
+.cl-tiles button.cl-metered {
+  box-shadow: inset 0 0 0 1px #64efc4;
+}
+.cl-icon,
+.cl-initials {
   width: 40px;
   height: 40px;
-  flex-shrink: 0;
-  overflow: hidden;
-  border-radius: 50%;
-  background: #203038;
-  font-size: 16px;
-  font-weight: 700;
 }
-.cl-icon img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.cl-icon-supermicro img {
-  object-fit: contain;
-  padding: 2px;
-}
-.cl-tiles button > span:nth-child(2) {
+.cl-initials {
   display: grid;
-  font-size: 16px;
+  place-items: center;
+  border-radius: 50%;
+  background: #344959;
 }
-.cl-tiles b,
-.cl-stat b {
-  color: #76e6be;
+.cl-tiles button > * {
+  position: absolute;
+}
+.cl-tiles button > :first-child {
+  left: 5px;
+  top: 5px;
+}
+.cl-tiles button > :nth-child(2) {
+  left: 51px;
+  top: 3px;
+  width: 113px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.cl-tiles b {
+  display: block;
+  margin-top: 3px;
+  color: var(--mint);
+}
+.cl-tiles b.cl-no-reading,
+.cl-tiles svg {
+  color: var(--panel-muted);
 }
 .cl-tiles button > svg {
-  margin-left: auto;
+  right: 3px;
+  top: 17px;
+}
+.cl-detail,
+.cl-settings-page {
+  position: relative;
+  height: 402px;
+}
+.cl-device-icon {
+  left: 0;
+  top: -2px;
+  width: 80px;
+  height: 80px;
+  display: grid;
+  place-items: center;
+}
+.cl-icon.cl-large {
+  width: 80px;
+  height: 80px;
 }
 .cl-device {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  height: 74px;
+  left: 86px;
+  right: 0;
+  top: 0;
+  height: 82px;
+  overflow: hidden;
+  white-space: nowrap;
 }
-.cl-device .cl-icon {
-  width: 64px;
-  height: 64px;
+.cl-has-switch .cl-device {
+  right: 315px;
 }
-.cl-device h3,
-.cl-settings-page h3 {
-  font-size: 32px;
+.cl-device small {
+  position: absolute;
+  left: 3px;
+  top: 52px;
 }
-.cl-widgets,
-.cl-settings-page {
+.cl-widgets {
+  top: 86px;
+  left: 0;
+  right: 0;
   display: grid;
   gap: 8px;
 }
-.cl-stat,
-.cl-controls span,
-.cl-settings-page > div {
-  padding: 0 18px;
-  background: #1e2c36;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
+.cl-has-switch .cl-widgets {
+  width: 452px;
+}
+.cl-widgets p {
+  font-size: 25px;
+  padding: 9px 4px;
+}
+.cl-stat {
+  position: relative;
   height: 58px;
 }
 .cl-stat > span {
-  width: 48%;
-  font-size: 19px;
+  position: absolute;
+  left: 18px;
+  top: calc(50% - 11px);
+  color: var(--panel-muted);
 }
-.cl-stat b,
-.cl-controls span {
-  font-size: 23px;
+.cl-stat b {
+  position: absolute;
+  left: 362px;
+  top: 14px;
+  font-size: 25px;
+  color: var(--mint);
+  white-space: nowrap;
 }
-.cl-controls {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+.cl-has-switch .cl-stat b {
+  left: 192px;
+}
+.cl-stat.cl-fans {
+  height: 78px;
+}
+.cl-fans b {
+  top: 8px;
+}
+.cl-fans b > span {
+  display: block;
+  height: 32px;
+}
+.cl-switch {
+  left: 464px;
+  top: -2px;
+  width: 304px;
+  height: 350px;
+}
+.cl-switch h4 {
+  left: 16px;
+  top: 6px;
+}
+.cl-switch span {
+  left: 16px;
+  top: 40px;
+}
+.cl-switch span:last-child {
+  top: 319px;
+}
+.cl-switch img {
+  left: 11px;
+  top: 63px;
+  width: 282px;
+  height: 254px;
+}
+.cl-switch small {
+  left: 180px;
+  top: 10px;
+}
+.cl-switch .cl-unknown-pose {
+  left: 55px;
+  top: 175px;
+}
+.cl-pin-note {
+  top: 360px;
+  left: 3px;
+}
+.cl-settings-page h3 {
+  left: 4px;
+  top: 11px;
 }
 .cl-settings-page > div {
-  justify-content: space-between;
-  font-size: 22px;
+  left: 0;
+  width: 766px;
+  height: 72px;
+  padding: 17px 20px;
+  font-size: 25px;
+}
+.cl-settings-page > div span {
+  float: right;
+  margin-right: 28px;
+  color: var(--mint);
+}
+.cl-settings-page > div:nth-child(2) {
+  top: 94px;
+}
+.cl-settings-page > div:nth-child(3) {
+  top: 186px;
+}
+.cl-settings-page > div:nth-child(n + 4) {
+  top: 272px;
+  width: 373px;
+  height: 64px;
+  padding-top: 15px;
+}
+.cl-settings-page > div:nth-child(5) {
+  left: 389px;
+  width: 377px;
+}
+.cl-settings-page > div:nth-child(n + 4) span {
+  margin-right: 0;
 }
 .cl-caption {
   margin: 12px 4px 0;
   font-size: 12px;
+}
+.cl-caption label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 10px;
 }
 @media (max-width: 950px) {
   .cl-columns {

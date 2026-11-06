@@ -1,5 +1,4 @@
-import "./Assistant.css";
-import { lazy, Suspense, useEffect, useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { api } from "./api";
 import { usePoll } from "./usePoll";
 import { Info, Server, Plus } from "lucide-react";
@@ -7,7 +6,7 @@ import { Info, Server, Plus } from "lucide-react";
 import { TelemetryFields, type Telemetry } from "./TelemetryFields";
 import brain from "./assets/assistant-brain.png";
 import { assistantCopy } from "./assistant-copy";
-const Assistant = lazy(() => import("./Assistant"));
+import type { Draft } from "./Assistant";
 type Connection = {
   telemetry?: Telemetry;
   hasGlancesToken?: boolean;
@@ -39,13 +38,12 @@ const blank: Connection = {
 export function ConnectionSettings({
   deviceId,
   csrf,
-  onLayout,
+  openAssistant,
 }: {
   deviceId?: string;
-  onLayout?: (id: string) => void;
+  openAssistant?: () => void;
   csrf: string;
 }) {
-  const [open, setOpen] = useState(false);
   const t = assistantCopy(navigator.language);
   const [revision, refresh] = useState(0);
   const profiles = usePoll<Connection[]>("device-settings", 0, true, revision);
@@ -61,36 +59,10 @@ export function ConnectionSettings({
         Glances or a power meter. Connection settings are stored on the app
         server.
       </p>
-      {!deviceId && (
-        <details
-          className="ibork-assistant"
-          onToggle={(e) => setOpen(e.currentTarget.open)}
-        >
-          <summary>
-            <img src={brain} alt="" width="38" height="32" /> {t.title}
-          </summary>
-          {open && (
-            <Suspense fallback={<p>{t.checking}</p>}>
-              <Assistant
-                csrf={csrf}
-                onLayout={onLayout}
-                review={(draft) => (
-                  <ConnectionForm
-                    key={JSON.stringify(draft)}
-                    initial={{
-                      ...blank,
-                      name: draft.name,
-                      host: draft.host,
-                      jetUrl: draft.jetUrl,
-                    }}
-                    csrf={csrf}
-                    assisted={draft.id}
-                  />
-                )}
-              />
-            </Suspense>
-          )}
-        </details>
+      {openAssistant && (
+        <button onClick={openAssistant} aria-haspopup="dialog">
+          <img src={brain} alt="" width="30" height="25" /> {t.title}
+        </button>
       )}
       {profiles.error ? (
         <p role="alert">
@@ -113,6 +85,28 @@ export function ConnectionSettings({
         />
       )}
     </section>
+  );
+}
+
+export function ReviewedConnection({
+  draft,
+  csrf,
+}: {
+  draft: Draft;
+  csrf: string;
+}) {
+  return (
+    <ConnectionForm
+      key={JSON.stringify(draft)}
+      initial={{
+        ...blank,
+        name: draft.name,
+        host: draft.host,
+        jetUrl: draft.jetUrl,
+      }}
+      csrf={csrf}
+      assisted={draft.id}
+    />
   );
 }
 

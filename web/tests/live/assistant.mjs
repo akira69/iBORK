@@ -18,22 +18,29 @@ try {
   await page.goto(env.IBORK_TEST_ORIGIN);
   await page.getByLabel("Management password").fill(env.IBORK_TEST_PASSWORD);
   await page.getByRole("button", { name: "Sign in to console" }).click();
-  await page
-    .getByRole("button", { name: "iBORK settings", exact: true })
-    .click();
-  await expect(page.getByRole("heading", { name: "Add server" })).toBeVisible();
-  await expect(page.getByText("Your question", { exact: true })).toBeHidden();
+  const launcher = page.locator(".assistant-tab");
+  const drawer = page.getByRole("dialog", { name: "iBORK Assistant" });
+  await expect(launcher).toBeVisible();
+  await expect(drawer).toBeHidden();
   expect(toolRequests).toBe(0);
-  await page.locator("summary").filter({ hasText: "iBORK Assistant" }).click();
-  await page.locator("summary").filter({ hasText: "Model connection" }).click();
+  await launcher.click();
+  await drawer.getByRole("button", { name: "Model connection" }).click();
+  await expect(page.getByRole("heading", { name: "Add server" })).toBeVisible();
+  await expect(drawer).toBeHidden();
   await page.getByLabel("OpenAI-compatible endpoint").fill(fixture.baseUrl);
   await page.getByLabel("Model ID").fill(fixture.model);
   if (fixture.key)
     await page.getByLabel("API key (optional)").fill(fixture.key);
   await page.getByRole("button", { name: "Test & save model" }).click();
   await expect(
-    page.getByText("Model listed and tool call verified."),
+    page
+      .locator(".assistant-settings")
+      .getByText("Model listed and tool call verified."),
   ).toBeVisible({ timeout: 60000 });
+  await page
+    .locator(".connection-settings")
+    .getByRole("button", { name: "iBORK Assistant" })
+    .click();
   await page
     .locator("summary")
     .filter({ hasText: "Suggested questions" })
@@ -54,6 +61,11 @@ try {
     page.locator(".assistant-turn code").filter({ hasText: "setup_status ✓" }),
   ).toBeVisible({ timeout: 62000 });
   await expect(page.locator(".assistant-turn p")).not.toBeEmpty();
+  await page.keyboard.press("Escape");
+  await expect(drawer).toBeHidden();
+  await page.getByLabel("Switch server").selectOption("vault");
+  await launcher.click();
+  await expect(page.locator(".assistant-turn")).toHaveCount(1);
   const followUp = page.waitForResponse(
     (r) => new URL(r.url()).pathname === "/api/assistant/chat",
     { timeout: 62000 },
@@ -122,7 +134,7 @@ try {
     expect(await geometry()).toMatchObject({ x, y });
   }
   stdout.write(
-    "Browser login, collapsed assistant, provider test, editable preset, shared setup_status call, model reply, follow-up and reviewed layout copy and tidy passed.\n",
+    "Browser login, mobile drawer, settings navigation, server switch, provider test, editable preset, shared setup_status call, model reply, follow-up and reviewed layout copy and tidy passed.\n",
   );
 } finally {
   await browser.close();
