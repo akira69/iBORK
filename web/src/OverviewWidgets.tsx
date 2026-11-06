@@ -52,8 +52,8 @@ export function SensorOverview({
     <OverviewFrame error={error} loading={loading}>
       {selected.length ? (
         <dl className="overview-readings">
-          {selected.map((sensor) => (
-            <div key={sensor.id}>
+          {selected.map((sensor, index) => (
+            <div key={sensor.id || index}>
               <dt>{sensor.name}</dt>
               <dd>
                 <strong>{sensorReading(sensor)}</strong>

@@ -85,3 +85,49 @@ test("empty fleet opens assistant settings from the mobile Remote display page",
     page.getByRole("button", { name: "Remote display" }),
   ).toBeVisible();
 });
+
+test("reopening uses the current model and keeps text typed during a turn", async ({
+  page,
+}) => {
+  await setup(page, true, false);
+  const state = { scope: "", servers: {} };
+  let revision = "first";
+  await page.route("**/api/assistant/status", (route) =>
+    route.fulfill({
+      json: {
+        state,
+        revision,
+        model: revision,
+        baseUrl: "https://models.invalid/v1",
+        hasKey: false,
+      },
+    }),
+  );
+  let release!: () => void;
+  const delayed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/assistant/chat", async (route) => {
+    const submitted = route.request().postDataJSON();
+    await delayed;
+    await route.fulfill({
+      json: { state, reply: submitted.revision, activity: [] },
+    });
+  });
+  const launcher = page.locator(".assistant-tab");
+  const drawer = page.getByRole("dialog", { name: "iBORK Assistant" });
+  await launcher.click();
+  await expect(drawer.getByText(/Model connection: first/)).toBeVisible();
+  await drawer.getByRole("button", { name: "Close assistant" }).click();
+  revision = "second";
+  await launcher.click();
+  await expect(drawer.getByText(/Model connection: second/)).toBeVisible();
+  const question = drawer.getByLabel("Your question");
+  await question.fill("First question");
+  await drawer.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(drawer.getByRole("button", { name: "Stop" })).toBeVisible();
+  await question.fill("Next question");
+  release();
+  await expect(drawer.getByRole("log")).toContainText("second");
+  await expect(question).toHaveValue("Next question");
+});

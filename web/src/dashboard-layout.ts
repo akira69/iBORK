@@ -167,6 +167,49 @@ export const widgetAvailable = (
         ? vncAvailable
         : jetAvailable || (kind !== "jetkvm" && kind !== "media");
 
+export function availableDashboardLayout(
+  layout: DashboardLayout,
+  {
+    jetAvailable,
+    vncAvailable,
+    managementAvailable,
+    cometAvailable,
+  }: {
+    jetAvailable?: boolean;
+    vncAvailable?: boolean;
+    managementAvailable?: boolean;
+    cometAvailable?: boolean;
+  },
+  fleet = false,
+): DashboardLayout {
+  const widgets = layout.widgets.filter((w) => Boolean(w.deviceIds) === fleet);
+  const previousConsole =
+    cometAvailable &&
+    !jetAvailable &&
+    !vncAvailable &&
+    !widgets.some((w) => w.kind === "glinet")
+      ? widgets.find((w) => w.kind === "jetkvm" || w.kind === "vnc")
+      : undefined;
+  return {
+    ...layout,
+    widgets: widgets
+      .map((w) =>
+        w === previousConsole
+          ? { ...w, id: "glinet", kind: "glinet" as const }
+          : w,
+      )
+      .filter((w) =>
+        widgetAvailable(
+          w.kind,
+          jetAvailable,
+          vncAvailable,
+          managementAvailable,
+          cometAvailable,
+        ),
+      ),
+  };
+}
+
 export function defaultLayout(
   vnc = false,
   management = true,

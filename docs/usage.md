@@ -82,7 +82,7 @@ For **MQTT outlet**, enter the broker, exact status topic and top-level numeric 
 
 ### Inspect hardware and issue commands
 
-On managed servers, **Sensors** uses the BMC unless Glances is configured. **Cooling** shows temperatures, fan speeds and supported controls. Use **Events** for the BMC log and **Inventory** for reported hardware details.
+Open **Sensors** for temperatures and fan speeds. On managed servers the readings come from the BMC unless Glances is configured. **Cooling** shows the current firmware fan mode on supported boards. Use **Events** for the BMC log and **Inventory** for reported hardware details.
 
 Power controls can start, shut down, reset or cycle the server. **Boot** sets a one-time boot target. Confirm the target before applying. If a command times out, **check the server before retrying**. The first request may already have taken effect.
 

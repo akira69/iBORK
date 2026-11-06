@@ -1,5 +1,4 @@
 .information {
-  --guide-serif: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   --guide-mono: "Cascadia Code", Consolas, monospace;
   color: #dce5e9;
   margin: 12px auto 32px;
@@ -29,8 +28,10 @@
   padding: clamp(24px, 3.4vw, 62px);
 }
 .guide-intro h2 {
-  font: 500 clamp(2.6rem, 4.8vw, 5.5rem)/1.04 var(--guide-serif);
-  letter-spacing: -0.045em;
+  font-size: clamp(2rem, 3.3vw, 3.6rem);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
   color: #f2f3e9;
 }
 .guide-intro p {
@@ -168,7 +169,9 @@
 .guide-chapter h2 {
   gap: 12px;
   margin-bottom: 16px;
-  font: 500 clamp(1.7rem, 2.5vw, 2.6rem)/1.15 var(--guide-serif);
+  font-size: clamp(1.3rem, 1.7vw, 1.8rem);
+  font-weight: 600;
+  line-height: 1.2;
   color: #f2f3e9;
   letter-spacing: -0.03em;
 }

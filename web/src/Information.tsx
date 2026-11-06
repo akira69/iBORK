@@ -168,11 +168,11 @@ export function Information({ emptyFleet = false }: { emptyFleet?: boolean }) {
         <img src={finchLogo} alt="Finch13" width="44" height="44" />
         <p>iBORK by Finch13 · Less bork. More uptime.</p>
         <a
-          href="https://github.com/akira69/iBORK"
+          href="https://github.com/akira69/iBORK/blob/main/docs/usage.md"
           target="_blank"
           rel="noopener noreferrer"
         >
-          <Github /> iBORK on GitHub <ArrowUpRight />
+          <Github /> Read the handbook on GitHub <ArrowUpRight />
         </a>
       </footer>
     </article>

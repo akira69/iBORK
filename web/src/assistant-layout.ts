@@ -1,7 +1,7 @@
 import {
   defaultLayout,
   parseLayout,
-  widgetAvailable,
+  availableDashboardLayout,
   writeLayout,
   type DashboardLayout,
   type DashboardWidget,
@@ -53,19 +53,21 @@ function snapshot(d: Device) {
   const key = dashboardKey(d),
     comet = sourcesFor(d).includes("glinet");
   const raw = localStorage.getItem(key);
-  if (raw !== null) {
-    const layout = parseLayout(raw);
-    if (!layout) throw Error("The saved dashboard is invalid.");
-    return { key, raw, layout };
-  }
-  const layout = defaultLayout(
-    !d.hasJetKVM && d.hasVNC,
-    d.hasManagement,
-    !d.hasJetKVM && !d.hasVNC && comet,
-  );
-  layout.widgets = layout.widgets.filter((w) =>
-    widgetAvailable(w.kind, d.hasJetKVM, d.hasVNC, d.hasManagement, comet),
-  );
+  const saved =
+    raw === null
+      ? defaultLayout(
+          !d.hasJetKVM && d.hasVNC,
+          d.hasManagement,
+          !d.hasJetKVM && !d.hasVNC && comet,
+        )
+      : parseLayout(raw);
+  if (!saved) throw Error("The saved dashboard is invalid.");
+  const layout = availableDashboardLayout(saved, {
+    jetAvailable: d.hasJetKVM,
+    vncAvailable: d.hasVNC,
+    managementAvailable: d.hasManagement,
+    cometAvailable: comet,
+  });
   return { key, raw, layout };
 }
 export function previewLayout(source: Device, target: Device) {

@@ -68,7 +68,7 @@ func readCooling(ctx context.Context, c coolingClient) (CoolingState, error) {
 }
 
 func (p *ipmiProvider) Cooling(ctx context.Context) (out CoolingState, err error) {
-	err = p.run(ctx, func(ctx context.Context, c *client.Client) error {
+	err = p.run(ctx, types.PrivilegeLevelUser, func(ctx context.Context, c *client.Client) error {
 		var e error
 		out, e = readCooling(ctx, c)
 		return e

@@ -17,8 +17,11 @@ test("fresh visits show the shared guide with credits, above Settings and on mob
   ).toBeVisible();
   await expect(guide.getByAltText("Finch13")).toBeVisible();
   await expect(
-    guide.getByRole("link", { name: "iBORK on GitHub" }),
-  ).toHaveAttribute("href", "https://github.com/akira69/iBORK");
+    guide.getByRole("link", { name: "Read the handbook on GitHub" }),
+  ).toHaveAttribute(
+    "href",
+    "https://github.com/akira69/iBORK/blob/main/docs/usage.md",
+  );
   await expect(
     page.locator(".rail-bottom > button").first(),
   ).toHaveAccessibleName("Information");
@@ -230,4 +233,22 @@ test("saved navigation waits for sign-in and survives a failed device-list reque
   await expect(
     page.getByRole("button", { name: "Sensors", exact: true }),
   ).toHaveAttribute("aria-current", "page");
+});
+
+test("Back to a guide fragment reopens Information from the wall", async ({
+  page,
+}) => {
+  await setup(page, true, false, true, false, true);
+  const guide = page.getByRole("article", { name: "iBORK usage guide" });
+  await guide.getByRole("link", { name: "Browse topics" }).click();
+  await guide
+    .getByRole("navigation", { name: "Guide contents" })
+    .getByRole("link", { name: "Connection help" })
+    .click();
+  await page.locator(".rail").getByRole("button", { name: "KVM Wall" }).click();
+  await expect(guide).toBeHidden();
+  await page.goBack();
+  await expect(
+    guide.getByRole("heading", { name: "On this page" }),
+  ).toBeInViewport();
 });

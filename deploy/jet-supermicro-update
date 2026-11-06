@@ -17,22 +17,28 @@ download_release() {
 }
 
 verify_release() (
-  cd "$1"
+  cd "$1" || return 1
   [[ -f SHA256SUMS && ! -L SHA256SUMS && $(wc -l < SHA256SUMS) == "${#ASSETS[@]}" ]] || return 1
   local name
   for name in "${ASSETS[@]}"; do
     [[ -f $name && ! -L $name ]] || return 1
     [[ $(awk -v name="$name" '$2 == name && NF == 2 {print $1}' SHA256SUMS) =~ ^[a-f0-9]{64}$ ]] || return 1
   done
-  sha256sum --check --status SHA256SUMS
+  sha256sum --check --strict --status SHA256SUMS
 )
 
 healthy() {
-  local attempt code origin
+  local attempt code origin listen
   origin=$(sed -n 's/^APP_ORIGIN=//p' "$CONFIG_FILE") || return 1
+  origin=${origin:-http://localhost:8080}
   [[ $origin == https://* || $origin == http://* ]] || return 1
+  listen=$(sed -n 's/^LISTEN_ADDR=//p' "$CONFIG_FILE") || return 1
+  case ${listen:=127.0.0.1:8080} in
+    :*|0.0.0.0:*) listen="127.0.0.1:${listen##*:}" ;;
+    '[::]:'*) listen="[::1]:${listen##*:}" ;;
+  esac
   for ((attempt=0; attempt<15; attempt++)); do
-    code=$(curl --silent --output /dev/null --write-out '%{http_code}' --header "Host: ${origin#*://}" --connect-timeout 2 --max-time 3 http://127.0.0.1:8080/api/session) || code=000
+    code=$(curl --silent --noproxy '*' --output /dev/null --write-out '%{http_code}' --header "Host: ${origin#*://}" --connect-timeout 2 --max-time 3 "http://$listen/api/session") || code=000
     if [[ $code == 401 ]] && systemctl is-active --quiet jet-supermicro; then return 0; fi
     sleep 1
   done

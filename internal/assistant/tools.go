@@ -113,7 +113,8 @@ func (g *Grant) Call(ctx context.Context, name string, args json.RawMessage) (an
 				draft.Host = c.Address
 			}
 			if c.ID == p.KVM && c.Kind == "kvm" {
-				draft.JetURL = "http://" + c.Address
+				// Discovery probes HTTP port 80. Use the same explicit port as saved profiles.
+				draft.JetURL = "http://" + c.Address + ":80"
 			}
 		}
 		if (p.BMC == "" && p.KVM == "") || (p.BMC != "" && draft.Host == "") || (p.KVM != "" && draft.JetURL == "") {

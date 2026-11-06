@@ -377,11 +377,8 @@ function Dashboard({
   const display = displays[device.id] ?? {};
   const [revision, setRevision] = useState(0);
   const appPage = tab === "iBORK settings" || tab === "Information";
-  const [widgetKinds, setWidgetKinds] = useState<WidgetKind[]>([
-    "jetkvm",
-    "power-control",
-    "health",
-  ]);
+  const [loadedWidgetKinds, setWidgetKinds] = useState<WidgetKind[]>();
+  const widgetKinds = loadedWidgetKinds ?? [];
   const hasPowerWidget = widgetKinds.some(
     (kind) =>
       (kind.startsWith("power-") && kind !== "power-control") ||
@@ -402,6 +399,20 @@ function Dashboard({
   useEffect(() => {
     writeNavigation({ deviceId: device.id, tab, view });
   }, [device.id, tab, view]);
+  useEffect(() => {
+    function openGuide() {
+      if (location.hash.startsWith("#guide-")) {
+        setView("server");
+        setTab("Information");
+        // The guide may already be mounted behind the wall.
+        requestAnimationFrame(() =>
+          document.getElementById(location.hash.slice(1))?.scrollIntoView(),
+        );
+      }
+    }
+    window.addEventListener("hashchange", openGuide);
+    return () => window.removeEventListener("hashchange", openGuide);
+  }, [setTab, setView]);
   const jetSnapshot = useConsoleSnapshot(`${device.id}:jetkvm`);
   const vncSnapshot = useConsoleSnapshot(`${device.id}:vnc`);
   const cometSnapshot = useConsoleSnapshot(`${device.id}:glinet`);
@@ -428,21 +439,31 @@ function Dashboard({
           consoleStore.disconnect(`${item.id}:${source}`);
   }, [consoleStore, devices, device.id, tab, view]);
   const autoConnect = displays[device.id]?.autoConnect !== false;
-  const autoSources = sourcesFor(device).join("|");
+  const visibleSources =
+    loadedWidgetKinds &&
+    sourcesFor(device)
+      .filter((source) => loadedWidgetKinds.includes(source))
+      .join("|");
+  const previousAutoSources = useRef<string[]>([]);
   useEffect(() => {
-    if (view !== "server" || tab !== "Console" || !autoConnect) return;
-    let cancelled = false;
-    // Console adapters register in sibling effects on the initial render.
-    queueMicrotask(() => {
-      if (!cancelled)
-        for (const source of ["jetkvm", "vnc", "glinet"] as const)
-          if (autoSources.includes(source))
-            consoleStore.connect(`${device.id}:${source}`);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [consoleStore, device.id, autoSources, view, tab, autoConnect]);
+    if (
+      view !== "server" ||
+      tab !== "Console" ||
+      visibleSources === undefined
+    ) {
+      previousAutoSources.current = [];
+      return;
+    }
+    const eligible = autoConnect ? visibleSources.split("|") : [];
+    // A geometry edit must not reconnect a source the operator disconnected.
+    for (const source of sourcesFor(device))
+      if (
+        eligible.includes(source) &&
+        !previousAutoSources.current.includes(source)
+      )
+        consoleStore.connect(`${device.id}:${source}`);
+    previousAutoSources.current = eligible;
+  }, [consoleStore, device, visibleSources, view, tab, autoConnect]);
   const hasManagement = device.hasManagement !== false;
   const hasComet = sourcesFor(device).includes("glinet");
   const endpointKey = endpointKeyFor(device);

@@ -18,11 +18,16 @@ done
 stage=$(mktemp -d "$APP_DIR/.install.XXXXXX")
 created=()
 installed=0
+starting=0
 # shellcheck disable=SC2317
 cleanup_install() {
   result=$?
   trap - EXIT
-  if [[ $installed == 0 && ${#created[@]} -gt 0 ]]; then rm -f -- "${created[@]}"; fi
+  if [[ $installed == 0 && ${#created[@]} -gt 0 ]]; then
+    if [[ $starting == 1 ]]; then systemctl disable --now jet-supermicro || :; fi
+    rm -f -- "${created[@]}"
+    systemctl daemon-reload || :
+  fi
   rm -rf -- "$stage"
   exit "$result"
 }
@@ -37,8 +42,8 @@ if [[ -e $APP_DIR/releases/$1 ]]; then
   if ! verify_release "$APP_DIR/releases/$1" || ! cmp -s "$stage/SHA256SUMS" "$APP_DIR/releases/$1/SHA256SUMS"; then echo 'Existing release differs.' >&2; exit 1; fi
 else mv "$stage" "$APP_DIR/releases/$1"; fi
 install_link() {
-  created+=("$2")
   ln -sT "$1" "$2"
+  created+=("$2")
 }
 install_link "releases/$1" "$APP_DIR/current"
 install_link current/jet-supermicro-linux-amd64 "$APP_DIR/jet-supermicro"
@@ -47,7 +52,8 @@ install_link "$APP_DIR/current/jet-supermicro-update" /usr/local/bin/update
 install_link "$APP_DIR/current/jet-supermicro-login.sh" /etc/profile.d/jet-supermicro.sh
 install_link "$APP_DIR/current/jet-supermicro.service" /etc/systemd/system/jet-supermicro.service
 systemctl daemon-reload
-installed=1
+starting=1
 systemctl enable --now jet-supermicro
 healthy || { echo 'Startup failed; inspect journalctl -u jet-supermicro.' >&2; exit 1; }
+installed=1
 echo "Installed $1."

@@ -128,7 +128,8 @@ func (j *jetRelay) signal(w http.ResponseWriter, r *http.Request, sessionContext
 		return
 	}
 	defer upstream.CloseNow()
-	browser, err := websocket.Accept(w, r, nil)
+	upgrade := &consoleUpgrade{ResponseWriter: w}
+	browser, err := websocket.Accept(upgrade, r, nil)
 	if err != nil {
 		return
 	}
@@ -157,7 +158,10 @@ func (j *jetRelay) signal(w http.ResponseWriter, r *http.Request, sessionContext
 	consumed := false
 	select {
 	case <-sessionContext.Done():
+		// Preserve the policy frame for live clients without waiting on a half-open browser.
+		timer := time.AfterFunc(250*time.Millisecond, func() { _ = upgrade.socket.Close() })
 		_ = browser.Close(websocket.StatusPolicyViolation, "Management session expired")
+		timer.Stop()
 	case <-done:
 		consumed = true
 	}

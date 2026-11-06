@@ -114,8 +114,8 @@ export function SensorGroups({
                     </tr>
                   </thead>
                   <tbody>
-                    {readings.map((sensor) => (
-                      <tr key={sensor.id}>
+                    {readings.map((sensor, index) => (
+                      <tr key={sensor.id || index}>
                         <td>
                           {sensor.name}
                           {sensor.warning != null && (

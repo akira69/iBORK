@@ -85,6 +85,24 @@ func TestGlancesOriginAndDeadline(t *testing.T) {
 	}
 }
 
+func TestIndistinguishableSensorsCannotBePinnedByLabel(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `[{"label":"Core 0","type":"temperature_core","unit":"C","value":40},{"label":"Package id 0","type":"temperature_core","unit":"C","value":55},{"label":"Core 0","type":"temperature_core","unit":"C","value":90}]`)
+	}))
+	defer upstream.Close()
+	c, err := New(upstream.URL, "", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readings, err := c.Sensors(t.Context())
+	if err != nil || len(readings) != 3 {
+		t.Fatal(readings, err)
+	}
+	if readings[0].ID != "" || readings[2].ID != "" || readings[1].ID != "temperature_core:Package id 0" || readings[0].Value != "40" || readings[2].Value != "90" {
+		t.Fatal(readings)
+	}
+}
+
 func TestGlancesUpstreamErrors(t *testing.T) {
 	var followed atomic.Bool
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { followed.Store(true) }))

@@ -1,4 +1,11 @@
-import { useEffect, useId, useRef, useState, useLayoutEffect } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useRef,
+  useState,
+  useLayoutEffect,
+} from "react";
 import { Cable, Network, SlidersHorizontal } from "lucide-react";
 import { CopyButton } from "./CopyButton";
 import { createPortal } from "react-dom";
@@ -46,7 +53,6 @@ export default function Assistant({
   onLayout?: (id: string) => void;
 }) {
   const t = assistantCopy(navigator.language);
-  const [loadAttempt, setLoadAttempt] = useState(0);
   const [status, setStatus] = useState<State>();
   const [savedModel, setSavedModel] = useState({
     base: "",
@@ -84,49 +90,49 @@ export default function Assistant({
     if (opened && transcript.current)
       transcript.current.scrollTop = transcript.current.scrollHeight;
   }, [chat, opened]);
-  useEffect(() => {
-    const controller = new AbortController();
-    api<Status>("assistant/status", {
-      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
-    })
-      .then((s) => {
-        if (controller.signal.aborted) return;
-        setStatus(s.state);
-        const messages = s.messages ?? [];
-        setChat(
-          messages.flatMap((m, i) =>
-            m.role === "user" && messages[i + 1]?.role === "assistant"
-              ? [
-                  {
-                    question: m.content,
-                    result: {
-                      reply: messages[i + 1].content,
-                      activity: null,
-                      state: s.state,
-                    },
+  async function refreshStatus(signal: AbortSignal) {
+    const s = await api<Status>("assistant/status", {
+      signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+    });
+    if (signal.aborted) return;
+    setStatus(s.state);
+    if (s.state.draft?.id !== status?.draft?.id) setReviewing(false);
+    if (
+      s.state.layout?.source !== status?.layout?.source ||
+      s.state.layout?.target !== status?.layout?.target
+    )
+      setPreview(undefined);
+    if (!status || s.revision !== revision) {
+      const messages = s.messages ?? [];
+      setChat(
+        messages.flatMap((m, i) =>
+          m.role === "user" && messages[i + 1]?.role === "assistant"
+            ? [
+                {
+                  question: m.content,
+                  result: {
+                    reply: messages[i + 1].content,
+                    activity: null,
+                    state: s.state,
                   },
-                ]
-              : [],
-          ),
-        );
-        setRevision(s.revision);
-        setSavedModel({ base: s.baseUrl, model: s.model, hasKey: s.hasKey });
-      })
-      .catch((e) => {
-        if (!controller.signal.aborted) setNote(String(e));
-      });
-    return () => {
-      controller.abort();
-      active.current?.abort();
-    };
-  }, [loadAttempt]);
+                },
+              ]
+            : [],
+        ),
+      );
+      setRevision(s.revision);
+      setSavedModel({ base: s.baseUrl, model: s.model, hasKey: s.hasKey });
+    }
+  }
+  const loadStatus = useEffectEvent(() => {
+    if (!status || opened) void run(refreshStatus);
+  });
+  useEffect(() => {
+    loadStatus();
+  }, [opened]);
+  useEffect(() => () => active.current?.abort(), []);
   const retryStatus = !status && note && (
-    <button
-      onClick={() => {
-        setNote("");
-        setLoadAttempt((n) => n + 1);
-      }}
-    >
+    <button disabled={busy} onClick={() => void run(refreshStatus)}>
       {t.retry}
     </button>
   );
@@ -170,6 +176,7 @@ export default function Assistant({
         createPortal(
           status ? (
             <AssistantSettings
+              key={revision}
               provider={savedModel}
               approvedScope={status.scope}
               busy={busy}
@@ -234,11 +241,7 @@ export default function Assistant({
         </div>
         <button
           disabled={busy || !status}
-          onClick={() =>
-            run(async (signal) =>
-              update((await api<Status>("assistant/status", { signal })).state),
-            )
-          }
+          onClick={() => void run(refreshStatus)}
         >
           {t.refresh}
         </button>
@@ -342,7 +345,9 @@ export default function Assistant({
               );
               update(result.state);
               setChat((old) => [...old.slice(-19), { question, result }]);
-              setMessage("");
+              setMessage((current) =>
+                current.trim() === question ? "" : current,
+              );
             });
           }}
         >

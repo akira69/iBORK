@@ -18,6 +18,7 @@ for name in "${ASSETS[@]}"; do printf new > "$test_root/assets/$name"; done
 export TEST_ASSETS="$test_root/assets" TEST_APP="$APP_DIR"
 cat > "$test_root/bin/systemctl" <<'MOCK'
 #!/bin/bash
+if [[ ${TEST_ENABLE_FAIL:-0} == 1 && $1 == enable ]]; then exit 1; fi
 exit 0
 MOCK
 cat > "$test_root/bin/curl" <<'MOCK'
@@ -36,6 +37,7 @@ case ${*: -1} in
     exit 1 ;;
 esac
 if [[ $* != *'Host: test.example'* ]]; then echo 403; exit; fi
+[[ ${*: -1} == "http://${TEST_LISTENER:-127.0.0.1:8080}/api/session" ]] || exit 7
 if [[ ${TEST_UNHEALTHY:-0} == 1 && $(readlink "$TEST_APP/current") == releases/v0.2.0 ]]; then echo 500; else echo 401; fi
 MOCK
 printf '#!/bin/sh\nexit 0\n' > "$test_root/bin/sleep"
@@ -52,9 +54,17 @@ expect_failure() {
 }
 (main --check)
 expect_old
+for listen in 127.0.0.1:18080 :18080 0.0.0.0:18080 '[::]:18080'; do
+  printf 'APP_ORIGIN=https://test.example\nLISTEN_ADDR=%s\n' "$listen" > "$CONFIG_FILE"
+  if [[ $listen == '[::]:18080' ]]; then TEST_LISTENER='[::1]:18080' healthy; else TEST_LISTENER=127.0.0.1:18080 healthy; fi
+done
+printf 'APP_ORIGIN=https://test.example\n' > "$CONFIG_FILE"
 TEST_DRAFT=true expect_failure --check
 expect_failure '../bad-tag'
 TEST_DOWNLOAD_FAIL=1 expect_failure v0.2.0
+sed -i '2s/  / /' "$test_root/assets/SHA256SUMS"
+expect_failure v0.2.0
+(cd "$test_root/assets"; sha256sum "${ASSETS[@]}" > SHA256SUMS)
 printf corrupt >> "$test_root/assets/jet-supermicro-linux-amd64"
 expect_failure v0.2.0
 (cd "$test_root/assets"; sha256sum "${ASSETS[@]}" > SHA256SUMS)
@@ -87,6 +97,12 @@ TEST_INSTALL_FAIL=1 bash "$fixture/install-release.sh" v0.2.0 >"$test_root/insta
 result=$?
 set -e
 [[ $result != 0 && ! -L $fixture/opt/jet-supermicro/current ]]
+for failure in TEST_ENABLE_FAIL TEST_UNHEALTHY; do
+  if env "$failure=1" TEST_APP="$fixture/opt/jet-supermicro" bash "$fixture/install-release.sh" v0.2.0 >"$test_root/install-failure.log" 2>&1; then
+    echo "Unexpected install success with $failure"; exit 1
+  fi
+  [[ ! -L $fixture/opt/jet-supermicro/current && ! -L $fixture/usr/local/bin/update ]]
+done
 bash "$fixture/install-release.sh" v0.2.0
 [[ -L $fixture/usr/local/bin/update && -L $fixture/etc/systemd/system/jet-supermicro.service ]]
 echo 'Updater tests passed: invalid input, timeout, corruption, path injection, locking, rollback and success.'

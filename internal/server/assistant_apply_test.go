@@ -1,18 +1,29 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/akira69/iBORK/internal/assistant"
 )
 
+type configuredJet struct {
+	fakeSettings
+	endpoint string
+}
+
+func (s *configuredJet) List() []DeviceSettings {
+	return []DeviceSettings{{JetURL: s.endpoint}}
+}
+
 func TestAssistedJetReviewAndRetry(t *testing.T) {
+	var probes atomic.Int32
 	fixture := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probes.Add(1)
 		if r.Method != "GET" || r.URL.Path != "/device" {
 			t.Error("unexpected device operation")
 			w.WriteHeader(400)
@@ -22,16 +33,12 @@ func TestAssistedJetReviewAndRetry(t *testing.T) {
 	}))
 	defer fixture.Close()
 	s, _ := testServer(t)
-	store := &fakeSettings{}
+	store := &configuredJet{endpoint: fixture.URL}
 	s.SetDeviceSettings(store, func() {})
 	c, csrf := login(t, s)
 	a := &s.sessions[c.Value].assistant
 	s.initGrant(a)
-	a.grant.Candidates = append(a.grant.Candidates, assistant.Candidate{ID: "test-kvm", Kind: "kvm", Address: strings.TrimPrefix(fixture.URL, "http://")})
-	_, err := a.grant.Call(context.Background(), "propose_server", []byte(`{"name":"Vault","kvm":"test-kvm"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
+	a.grant.Draft = &assistant.Draft{ID: token(), Name: "Vault", JetURL: fixture.URL}
 	id := a.grant.Draft.ID
 	password := ""
 	input := DeviceSettings{Name: "Vault", JetURL: fixture.URL, JetPassword: &password}
@@ -50,6 +57,10 @@ func TestAssistedJetReviewAndRetry(t *testing.T) {
 	if save("stale") != 409 || store.calls != 0 {
 		t.Fatal("stale draft applied")
 	}
+	if save(id) != 409 || probes.Load() != 0 || store.calls != 0 {
+		t.Fatal("already configured JetKVM was contacted")
+	}
+	store.endpoint = ""
 	if save(id) != 200 || store.calls != 1 {
 		t.Fatal("reviewed proposal wasn't saved")
 	}

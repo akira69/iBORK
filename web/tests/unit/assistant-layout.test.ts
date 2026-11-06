@@ -1,5 +1,6 @@
-import { expect, it } from "vitest";
-import { arrange } from "../../src/assistant-layout";
+import { expect, it, vi } from "vitest";
+import { arrange, previewLayout } from "../../src/assistant-layout";
+import { dashboardKey, type Device } from "../../src/device-identity";
 import { type DashboardLayout } from "../../src/dashboard-layout";
 const target: DashboardLayout = {
   version: 1,
@@ -45,4 +46,32 @@ it("copies each sensor slot once while keeping destination IDs and bindings", ()
     { ...shared, x: 0, y: 0 },
     extra,
   ]);
+});
+
+it("copies the Comet geometry shown for a saved legacy console", () => {
+  const source: Device = {
+    id: "old",
+    name: "source",
+    bmcHost: "",
+    bmcPort: 0,
+    hasManagement: false,
+    hasJetKVM: false,
+    consoleSources: ["glinet"],
+  };
+  const dest = { ...source, id: "new" };
+  const layout = {
+    version: 1,
+    widgets: [{ id: "jetkvm", kind: "jetkvm", x: 2, y: 1, w: 10, h: 5 }],
+  };
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) =>
+      key === dashboardKey(source) ? JSON.stringify(layout) : null,
+  });
+  try {
+    expect(previewLayout(source, dest).changes).toEqual([
+      { ...layout.widgets[0], kind: "glinet", id: "glinet" },
+    ]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
