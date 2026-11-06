@@ -117,7 +117,9 @@ func (s *Server) servePanel(w http.ResponseWriter, r *http.Request) {
 			for _, device := range snapshot["devices"].([]panelDevice) {
 				if device.ID == id {
 					snapshot = maps.Clone(snapshot)
-					snapshot["detail"] = s.devices[id].panelDetail(p.ctx, device)
+					detail := s.devices[id].panelDetail(p.ctx, device)
+					detail.Image = p.icons[id].DetailImage
+					snapshot["detail"] = detail
 					break
 				}
 			}
@@ -139,6 +141,7 @@ type panelDevice struct {
 	ID       string     `json:"id"`
 	Name     string     `json:"name"`
 	Model    string     `json:"model"`
+	Metered  bool       `json:"metered"`
 	Watts    *float64   `json:"watts"`
 	Controls bool       `json:"controls"`
 	Widgets  []string   `json:"widgets"`
@@ -167,8 +170,9 @@ func (s *Server) panelSnapshot(now time.Time) map[string]any {
 				}
 			}
 		}
-		device := panelDevice{ID: id, Name: d.cfg.ServerName, Model: d.cfg.Model, Watts: watts, Widgets: row.Widgets, Controls: slices.Contains(row.Widgets, "controls")}
+		device := panelDevice{ID: id, Name: d.cfg.ServerName, Model: d.cfg.Model, Watts: watts, Metered: d.cfg.History != nil, Widgets: row.Widgets, Controls: slices.Contains(row.Widgets, "controls")}
 		if icon, ok := s.panel.icons[id]; ok {
+			icon.DetailImage = nil // Only the selected device receives its full-size icon.
 			device.Sidebar = &icon
 		}
 		devices = append(devices, device)

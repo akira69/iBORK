@@ -154,7 +154,7 @@ func TestPanelDetailRefresh(t *testing.T) {
 		return []management.Sensor{
 			{Unit: "degrees C", Value: "38"}, {Unit: "degrees F", Value: "122"}, {Unit: "degrees C", Value: "250", DetailOnly: true},
 			{Unit: "degrees C", Value: "Infinity"}, {Unit: "degrees C", Value: "200", State: "unavailable"},
-			{Unit: "RPM", Value: "2000"}, {Unit: "RPM", Value: "1200"}, {Unit: "RPM", Value: "-1"},
+			{Unit: "RPM", Value: "2000"}, {Unit: "RPM", Value: "1200"}, {Unit: "RPM", Value: "-1"}, {Unit: "RPM", Value: "9000", State: "unavailable"},
 		}, nil
 	}
 	get := func(id string) *panelReadings {
@@ -170,7 +170,7 @@ func TestPanelDetailRefresh(t *testing.T) {
 		t.Fatal("polled an unrequested device")
 	}
 	start := time.Now()
-	if d := get("default"); d == nil || d.Temperature != nil || d.Fan != nil || time.Since(start) >= time.Second {
+	if d := get("default"); d == nil || d.Temperature != nil || d.Fan != nil || d.FanMax != nil || time.Since(start) >= time.Second {
 		t.Fatal("cold detail did not promptly return null readings", d)
 	}
 	select {
@@ -185,7 +185,7 @@ func TestPanelDetailRefresh(t *testing.T) {
 	deadline := time.Now().Add(time.Second)
 	for {
 		d := get("default")
-		if d != nil && d.Temperature != nil && *d.Temperature == 50 && d.Fan != nil && *d.Fan == 1200 {
+		if d != nil && d.Temperature != nil && *d.Temperature == 50 && d.Fan != nil && *d.Fan == 1200 && d.FanMax != nil && *d.FanMax == 2000 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -224,7 +224,7 @@ func TestPanelDetailFailedReadsBackOff(t *testing.T) {
 			_ = s.panelDetail(ctx, widgets)
 		}
 		synctest.Wait()
-		if calls != 1 || s.panelRefreshing {
+		if calls != 1 || s.panelSensorScan.running {
 			t.Fatal("timed-out refresh did not back off", calls)
 		}
 		time.Sleep(sensorTTL)
@@ -233,7 +233,7 @@ func TestPanelDetailFailedReadsBackOff(t *testing.T) {
 		cancel()
 		synctest.Wait()
 		_ = s.panelDetail(ctx, widgets)
-		if calls != 2 || s.panelRefreshing {
+		if calls != 2 || s.panelSensorScan.running {
 			t.Fatal("shutdown left a refresh running", calls)
 		}
 	})
@@ -269,6 +269,37 @@ func TestPanelDetailThirtySecondPolls(t *testing.T) {
 		}
 		if calls != 5 {
 			t.Fatal("unexpected refresh count", calls)
+		}
+	})
+}
+
+func TestPanelSwitchRestingState(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, _ := testServer(t)
+		device := panelDevice{ID: "default", Controls: true}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		read := func() string { return s.panelDetail(ctx, device).PowerState }
+		if read() != "" {
+			t.Fatal("cold switch showed a position")
+		}
+		synctest.Wait()
+		if read() != "on" {
+			t.Fatal("missing chassis state")
+		}
+		s.cache["power"] = cached{value: management.PowerState{State: "off"}, expires: time.Now().Add(powerTTL)}
+		if read() != "off" {
+			t.Fatal("standby server showed on")
+		}
+		device.Controls = false
+		if read() != "" {
+			t.Fatal("power state without a switch")
+		}
+		device.Controls = true
+		cancel()
+		time.Sleep(41 * time.Second)
+		if read() != "" {
+			t.Fatal("expired power state shown")
 		}
 	})
 }

@@ -345,16 +345,22 @@ export function PanelLayoutPreview({
                                 {
                                   power: "Power draw",
                                   temperature: "Hottest temperature",
-                                  fan: "Lowest fan speed",
+                                  fan: "Fan Speeds",
                                 }[k]
                               }
                             </span>
                             <b>
-                              {k === "temperature"
-                                ? "42.0 °C"
-                                : k === "fan"
-                                  ? "1800 RPM"
-                                  : `${identity.watts} W`}
+                              {k === "temperature" ? (
+                                "42.0 °C"
+                              ) : k === "fan" ? (
+                                <>
+                                  Lowest: 1800 RPM
+                                  <br />
+                                  Highest: 2400 RPM
+                                </>
+                              ) : (
+                                `${identity.watts} W`
+                              )}
                             </b>
                           </div>
                         ),

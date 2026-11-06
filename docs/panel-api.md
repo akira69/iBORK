@@ -34,19 +34,19 @@ Send `Authorization: Bearer <token>` with every request. The native client may o
 | Field | Meaning |
 | --- | --- |
 | `capturedAt` | Service observation time in UNIX seconds. Subsequent GETs may reuse a snapshot for up to ten seconds. |
-| `devices` | Included servers in panel order, with `id`, `name`, `model`, `watts`, `controls`, and ordered `widgets`. Watts are null on read error or when the last observation is older than 150 seconds. Zero is a measured value. Controls require an enabled controls section, a PIN hash and an IPMI management provider. |
+| `devices` | Included servers in panel order, with `id`, `name`, `model`, `metered`, `watts`, `controls`, and ordered `widgets`. The device meter flag identifies a configured power collector. Watts are null on read error or when the last observation is older than 150 seconds. Zero is a measured value. Controls require an enabled controls section, a PIN hash and an IPMI management provider. |
 | `metered`, `total` | Number of included servers with power collectors and total included servers. |
 | `home` | Ordered visible Home sections. Valid values are `power`, `day`, `month` and `servers`. |
-| `detail` | Optional readings for the included server requested with `?detail=<id>`. Temperature is in °C and fan speed in RPM. A null reading is unavailable. |
+| `detail` | Optional readings for the included server requested with `?detail=<id>`. Temperature is in °C and `fan` and `fanMax` are the lowest and highest fan speeds in RPM. When controls are enabled, `powerState` reports `on` or `off` from chassis status. A missing state or null reading is unavailable. |
 | `day`, `month` | Rolling 24-hour and 30-day windows ending at the observation time. Each contains oldest-first hourly or daily time-weighted mean watts. A bucket with zero observed duration is null. |
 | `dayKwh`, `monthKwh` | Energy from intervals observed in common by every included collector. Null when no interval is covered. |
 | `dayHours`, `monthHours` | Hours of common observed time in each window. Multiply measured kWh by the configured price per kWh for the cost over these hours. |
 | `usdPerKwh` | Shared fleet electricity rate, from 0 to 1000 USD per kWh. Operators read or update it through **GET /api/electricity-rate** and **PUT /api/electricity-rate** using an authenticated web session. PUT requires a CSRF token and a JSON body such as `{"usdPerKwh":0.20}`. |
 | `displaySchedule`, `canEditDisplay` | Shared schedule and whether a panel PIN is configured for edits. Each period has a unique start minute in local time (0–1439) and brightness (0–100%). |
 
-Each device may also include a `sidebar` object with its `id`, short `label` and a base64-encoded 40 × 40 JPEG `image`. The authenticated web settings can publish a set from the operator's browser.
+Each device may also include a `sidebar` object with its `id`, short `label` and a base64-encoded 40 × 40 JPEG `image`. The selected server may also return an 80 by 80 JPEG in `detail.image`. The authenticated web settings can publish a set from the operator's browser.
 
-Opening a server dashboard requests the hottest mapped temperature and lowest reported fan speed for that server. A cold read returns null while the service fetches the sensors. After 20 seconds the next detail request refreshes the readings in the background. The panel can receive the last successful readings until they reach 90 seconds of age. Failed reads back off for 20 seconds.
+Opening a server dashboard requests the hottest mapped temperature and the lowest and highest reported fan speeds for that server. A cold read returns null while the service fetches the sensors. After 20 seconds the next detail request refreshes the readings in the background. The panel can receive the last successful readings until they reach 90 seconds of age. Failed reads back off for 20 seconds.
 
 **GET /api/panel-layout** returns the effective layout for the authenticated web operator. **PUT /api/panel-layout** requires the operator's CSRF token, the current `revision`, at least one ordered `home` section and a `servers` row for every current inventory ID. Each row supplies `id`, `included` and its ordered `widgets` from `power`, `temperature`, `fan` and `controls`. The response lists each server's `available` widgets. Reload the layout after an HTTP 409 conflict.
 

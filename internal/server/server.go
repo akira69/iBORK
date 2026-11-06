@@ -74,8 +74,7 @@ type Server struct {
 	glCheckGate  chan struct{}
 	lastAction   time.Time
 
-	panelRefreshing bool // protected by cacheMu
-	panelRetryAfter time.Time
+	panelSensorScan, panelPowerScan panelRefresh // protected by cacheMu
 }
 
 func New(cfg Config, p management.Provider, static http.Handler) (*Server, error) {
@@ -178,7 +177,7 @@ func decode(w http.ResponseWriter, r *http.Request, dest any) bool {
 	case *DeviceSettings:
 		limit = 16 * 1024
 	case *panelIconList:
-		limit = 48 * 1024
+		limit = PanelIconConfigLimit
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	d := json.NewDecoder(r.Body)
@@ -378,7 +377,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET /api/config":
 		reply(w, 200, map[string]any{"deviceId": s.cfg.DeviceID, "manufacturer": s.cfg.Manufacturer, "model": s.cfg.Model, "jetUrl": s.cfg.JetURL, "glUrl": s.cfg.GLURL, "glUsername": s.cfg.GLUsername, "vncHost": vncHost(s.cfg), "vncPort": s.cfg.VNCPort, "vncTransport": s.cfg.VNCTransport, "bmcHost": s.cfg.BMCHost, "bmcUsername": s.cfg.BMCUsername, "bmcPort": s.cfg.BMCPort, "timeoutSeconds": s.cfg.Timeout.Seconds(), "serverName": s.cfg.ServerName, "credentials": "Managed by service credential files"})
 	case "GET /api/power":
-		s.read(w, ctx, "power", 5*time.Second, func(ctx context.Context) (any, error) { return s.provider.Power(ctx) })
+		value, err := s.readPower(ctx)
+		replyRead(w, value, err)
 	case "GET /api/energy":
 		if s.cfg.History == nil && s.provider == nil {
 			fail(w, 409, "No power source configured for this device")

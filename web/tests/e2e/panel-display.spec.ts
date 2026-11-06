@@ -162,25 +162,34 @@ test("publish copies custom, preset and initials icons with bounded JPEGs and Un
   const request = await sent;
   expect(request.method()).toBe("PUT");
   expect(request.headers()["x-csrf-token"]).toBe("fixture");
-  const icons: { id: string; label: string; image: string }[] =
-    request.postDataJSON().icons;
+  const icons: {
+    id: string;
+    label: string;
+    image: string;
+    detailImage: string;
+  }[] = request.postDataJSON().icons;
   expect(icons.map(({ id, label }) => [id, label])).toEqual([
     ["0", "NAS"],
     ["1", "T320"],
     ["2", "Vault🌙"],
   ]);
   expect(new Set(icons.map((icon) => icon.image)).size).toBe(3);
-  for (const { image } of icons) {
-    expect(Buffer.from(image, "base64").length).toBeLessThanOrEqual(2048);
-    expect(image).toMatch(/^\/9j\//);
-    expect(
-      await page.evaluate(async (data) => {
-        const img = new Image();
-        img.src = "data:image/jpeg;base64," + data;
-        await img.decode();
-        return [img.width, img.height];
-      }, image),
-    ).toEqual([40, 40]);
+  for (const icon of icons) {
+    for (const [image, size, limit] of [
+      [icon.image, 40, 2048],
+      [icon.detailImage, 80, 8192],
+    ] as const) {
+      expect(Buffer.from(image, "base64").length).toBeLessThanOrEqual(limit);
+      expect(image).toMatch(/^\/9j\//);
+      expect(
+        await page.evaluate(async (data) => {
+          const img = new Image();
+          img.src = "data:image/jpeg;base64," + data;
+          await img.decode();
+          return [img.width, img.height];
+        }, image),
+      ).toEqual([size, size]);
+    }
   }
   await expect(
     page.getByText("Sidebar icons and labels copied to the panel settings."),

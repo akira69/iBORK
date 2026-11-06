@@ -12,14 +12,34 @@ import (
 	"unicode/utf8"
 )
 
+const PanelIconConfigLimit = 240 * 1024
+
 type panelIcon struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
-	Image []byte `json:"image"`
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Image       []byte `json:"image"`
+	DetailImage []byte `json:"detailImage,omitempty"`
 }
 
 type panelIconList struct {
 	Icons []panelIcon `json:"icons"`
+}
+
+// Re-encode baseline JPEGs so uploaded metadata is never delivered to the panel.
+func cleanIcon(data []byte, size, limit, quality int) []byte {
+	if len(data) > limit {
+		return nil
+	}
+	cfg, err := jpeg.DecodeConfig(bytes.NewReader(data))
+	if err != nil || cfg.Width != size || cfg.Height != size {
+		return nil
+	}
+	im, err := jpeg.Decode(bytes.NewReader(data))
+	var clean bytes.Buffer
+	if err != nil || jpeg.Encode(&clean, im, &jpeg.Options{Quality: quality}) != nil || clean.Len() > limit {
+		return nil
+	}
+	return clean.Bytes()
 }
 
 func (list panelIconList) validated() (map[string]panelIcon, error) {
@@ -31,23 +51,19 @@ func (list panelIconList) validated() (map[string]panelIcon, error) {
 	for _, icon := range list.Icons {
 		if _, exists := icons[icon.ID]; exists || icon.ID == "" || len(icon.ID) > 32 ||
 			strings.TrimSpace(icon.Label) == "" || utf8.RuneCountInString(icon.Label) > 6 ||
-			strings.IndexFunc(icon.Label, unicode.IsControl) >= 0 || len(icon.Image) > 2048 {
+			strings.IndexFunc(icon.Label, unicode.IsControl) >= 0 {
 			return nil, invalid
 		}
-		cfg, err := jpeg.DecodeConfig(bytes.NewReader(icon.Image))
-		if err != nil || cfg.Width != 40 || cfg.Height != 40 {
+		icon.Image = cleanIcon(icon.Image, 40, 2048, 78)
+		if icon.Image == nil {
 			return nil, invalid
 		}
-		im, err := jpeg.Decode(bytes.NewReader(icon.Image))
-		if err != nil {
-			return nil, invalid
+		if len(icon.DetailImage) > 0 {
+			icon.DetailImage = cleanIcon(icon.DetailImage, 80, 8192, 90)
+			if icon.DetailImage == nil {
+				return nil, errors.New("expected an 80 by 80 detail JPEG")
+			}
 		}
-		// Publish a baseline JPEG without delivering browser-supplied metadata to firmware.
-		var clean bytes.Buffer
-		if jpeg.Encode(&clean, im, &jpeg.Options{Quality: 78}) != nil || clean.Len() > 2048 {
-			return nil, invalid
-		}
-		icon.Image = clean.Bytes()
 		icons[icon.ID] = icon
 	}
 	return icons, nil
