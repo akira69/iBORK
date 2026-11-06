@@ -27,17 +27,31 @@
 .guide-intro {
   padding: clamp(24px, 3.4vw, 62px);
 }
-.guide-intro h2 {
-  font-size: clamp(2rem, 3.3vw, 3.6rem);
-  font-weight: 600;
-  line-height: 1.1;
-  letter-spacing: -0.035em;
+.guide-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.18em;
+  font-size: clamp(3.25rem, 5vw, 5rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.055em;
   color: #f2f3e9;
+}
+.guide-brand img {
+  width: 0.96em;
+  height: 0.96em;
 }
 .guide-intro p {
   max-width: 53ch;
   margin: 14px 0 22px;
   color: #c0d0ca;
+}
+.guide-intro .guide-subtitle {
+  font-size: clamp(1.25rem, 1.8vw, 1.65rem);
+  font-weight: 550;
+  line-height: 1.25;
+  margin: 12px 0 0;
+  color: #e3eee9;
 }
 .guide-shortcuts,
 .information-credit,

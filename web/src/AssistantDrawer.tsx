@@ -35,10 +35,7 @@ export function AssistantDrawer({
   const [opened, setOpened] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [host, setHost] = useState<HTMLDivElement | null>(null);
-  const [link, setLink] = useState<{
-    section: SettingsSection;
-    request: number;
-  }>();
+  const [settingsRequest, setSettingsRequest] = useState(0);
   function showDrawer() {
     const node = dialog.current;
     if (!node) return;
@@ -78,7 +75,7 @@ export function AssistantDrawer({
       {children({
         openAssistant,
         settings,
-        settingsRequest: link?.request ?? 0,
+        settingsRequest,
       })}
       <button
         className="assistant-tab"
@@ -104,6 +101,17 @@ export function AssistantDrawer({
           <img src={brain} alt="" width="38" height="32" />
           <h2 id="assistant-title">{t.title}</h2>
           <button
+            aria-label={t.settings}
+            title={t.settings}
+            onClick={() => {
+              dialog.current?.close();
+              onSettings?.();
+              setSettingsRequest((previous) => previous + 1);
+            }}
+          >
+            <Settings size={18} />
+          </button>
+          <button
             autoFocus
             onClick={() => dialog.current?.close()}
             aria-label={t.close}
@@ -111,30 +119,13 @@ export function AssistantDrawer({
             <X size={20} />
           </button>
         </header>
-        <nav aria-label={t.settings}>
-          {(["provider", "scope", "connect"] as const).map((section) => (
-            <button
-              key={section}
-              onClick={() => {
-                dialog.current?.close();
-                onSettings?.();
-                setLink((previous) => ({
-                  section,
-                  request: (previous?.request ?? 0) + 1,
-                }));
-              }}
-            >
-              {t[section]}
-            </button>
-          ))}
-        </nav>
         {loaded && (
           <Suspense fallback={<p role="status">{t.checking}</p>}>
             <Assistant
               csrf={csrf}
               onLayout={onLayout}
               host={host}
-              link={link}
+              settingsRequest={settingsRequest}
               opened={opened}
             />
           </Suspense>

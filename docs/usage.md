@@ -1,3 +1,5 @@
+# iBORK
+
 ## Operator handbook
 
 Connect to a server, follow its power draw, or ask the iBORK Assistant to help set up your fleet.
@@ -18,11 +20,13 @@ After your first visit, this browser remembers your last server and page. Sign i
 
 ## iBORK Assistant
 
-Open the brain icon at the right edge of any signed-in page to chat. The **iBORK Assistant** button under **Add server** opens the same drawer. Ask it to find devices, pair a KVM or rearrange a Console dashboard. The links at the top of the drawer open the matching tab in **Assistant settings**.
+Open the brain icon at the right edge of any signed-in page to chat. Ask the Assistant to find devices, pair a KVM or rearrange a Console dashboard. The gear in the chat header opens **Assistant settings**.
 
 ### Chat with a model
 
-In **Assistant settings → Model**, enter an OpenAI-compatible `/v1` endpoint and a model ID that supports tool calls. Choose **Test & save model**. Your messages, server names and device findings go to that provider. Enter device passwords in the connection form. **Suggested questions** fills in a prompt you can edit before choosing **Send**.
+In **Assistant settings → Model**, enter your provider’s OpenAI-compatible `/v1` endpoint and the ID of a tool-capable model. Choose **Test & save model** to set the shared default. The picker below your message lists models from that endpoint, including models installed in Ollama. Choose a chat model that supports tool calls. Your selection applies to this conversation.
+
+Type a question or choose a suggestion and edit it. Press `Enter` to send or `Shift+Enter` for a new line. The selected provider receives your messages and device findings. Use the connection form for device passwords.
 
 ### Discover and verify devices
 
@@ -30,7 +34,7 @@ In **Assistant settings → Discovery**, approve private IPv4 addresses or a sub
 
 ### Connect your own agent
 
-On the HTTPS site, open **Assistant settings → MCP**. Copy the client configuration and put the temporary token in your client’s secret settings. Tokens expire within 15 minutes. Discovery requires an approved network. Your agent can read server names and propose layouts without one. Choose **Refresh proposals** to review its work. Changing scope, revoking the token or signing out ends access.
+On the HTTPS site, open **Assistant settings → MCP**. Copy the client configuration and put the temporary token in your client’s secret settings. Tokens expire within 15 minutes. Discovery requires an approved network. Your agent can read server names and propose layouts without one. Reopen the chat to see its latest proposals. Changing scope, revoking the token or signing out ends access.
 
 ### Preview a layout
 
