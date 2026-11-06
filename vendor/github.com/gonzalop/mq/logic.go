@@ -1,0 +1,750 @@
+package mq
+
+import (
+	"cmp"
+	"context"
+	"fmt"
+	"maps"
+	"slices"
+	"sync"
+	"time"
+
+	"github.com/gonzalop/mq/internal/packets"
+)
+
+// logicLoop is the single-threaded state machine that manages all client state.
+// This avoids the need for mutexes on the pending and subscriptions maps.
+func (c *Client) logicLoop() {
+	defer c.wg.Done()
+	defer c.activeLoops.Add(-1)
+
+	// Safety net for the flow control queue: it is normally drained when acks
+	// free in-flight slots, but processPublishQueueLocked stops early when the
+	// outgoing channel is full.
+	queueTicker := time.NewTicker(5 * time.Second)
+	defer queueTicker.Stop()
+
+	for {
+		select {
+		case pkt := <-c.incoming:
+			if b, ok := pkt.(*incomingBarrier); ok {
+				close(b.done)
+				continue
+			}
+			toSend := c.handleIncoming(pkt)
+			c.sendPackets(toSend)
+
+		case <-queueTicker.C:
+			c.sessionLock.Lock()
+			toSend := c.processPublishQueueLocked()
+			c.sessionLock.Unlock()
+			c.sendPackets(toSend)
+
+		case <-c.stop:
+			c.opts.Logger.Debug("logicLoop stopped")
+			c.sessionLock.Lock()
+			for _, op := range c.pending {
+				op.token.complete(ErrClientDisconnected)
+			}
+			// Complete tokens for queued publish requests
+			for _, req := range c.publishQueue {
+				req.token.complete(ErrClientDisconnected)
+			}
+			// Clear rather than nil the map: a late Publish racing with the
+			// stop must not write into a nil map.
+			clear(c.pending)
+			c.publishQueue = nil
+			c.sessionLock.Unlock()
+			return
+		}
+	}
+}
+
+// stopped reports whether the client has been stopped by Disconnect.
+func (c *Client) stopped() bool {
+	select {
+	case <-c.stop:
+		return true
+	default:
+		return false
+	}
+}
+
+// addPendingLocked adds a pending operation, numbering it so a reconnect can
+// resend in the original order (packet IDs wrap around, so they cannot).
+// Assumes sessionLock is HELD.
+func (c *Client) addPendingLocked(packetID uint16, op *pendingOp) {
+	op.seq = c.pendingSeq
+	c.pendingSeq++
+	c.pending[packetID] = op
+}
+
+// removePending removes a pending operation.
+// Assumes sessionLock is HELD.
+func (c *Client) removePending(packetID uint16) {
+	delete(c.pending, packetID)
+}
+
+// internalResetState resets session state (e.g. on clean session reconnect).
+// It acquires the session lock.
+func (c *Client) internalResetState() {
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
+	c.receivedQoS2 = make(map[uint16]struct{})
+	c.inboundUnacked = make(map[uint16]struct{})
+	c.pingPending.Store(false)
+	select {
+	case <-c.pingPendingCh:
+	default:
+	}
+}
+
+// sendPackets sends a slice of packets to the outgoing channel without holding
+// the lock. It blocks while the channel is full: packets are only resent after
+// a reconnect, so dropping a PUBREL, a PUBCOMP or a publish released from the
+// flow control queue would stall that flow until then. A full channel means the
+// network is slow, and blocking here pushes back on the read loop.
+func (c *Client) sendPackets(packets []packets.Packet) {
+	for _, pkt := range packets {
+		select {
+		case c.outgoing <- pkt:
+		case <-c.stop:
+			return
+		}
+	}
+}
+
+// handleIncoming processes incoming packets from the server.
+// Returns a slice of packets that should be sent in response.
+func (c *Client) handleIncoming(pkt packets.Packet) []packets.Packet {
+	switch p := pkt.(type) {
+	case *packets.PublishPacket:
+		return c.handlePublish(p)
+
+	case *packets.PubackPacket:
+		return c.handleAck(p.PacketID, p.ReasonCode)
+
+	case *packets.PubrecPacket:
+		return c.handlePubrec(p)
+
+	case *packets.PubrelPacket:
+		return c.handlePubrel(p)
+
+	case *packets.PubcompPacket:
+		return c.handleAck(p.PacketID, p.ReasonCode)
+
+	case *packets.SubackPacket:
+		return c.handleSuback(p)
+
+	case *packets.UnsubackPacket:
+		return c.handleUnsuback(p)
+
+	case *packets.PingrespPacket:
+		// Keepalive response - signal writeLoop that PINGRESP was received
+		select {
+		case c.pingPendingCh <- struct{}{}:
+		default:
+			// Channel full, which means writeLoop hasn't processed the previous signal yet
+		}
+
+	case *packets.DisconnectPacket:
+		c.handleDisconnectPacket(p)
+
+	case *packets.AuthPacket:
+		return c.handleAuth(p)
+	}
+	return nil
+}
+
+// handlePublish processes an incoming PUBLISH packet.
+func (c *Client) handlePublish(p *packets.PublishPacket) []packets.Packet {
+	// 1. Process Topic Alias (MQTT v5.0)
+	if err := c.processTopicAlias(p); err != nil {
+		c.opts.Logger.Error("failed to process topic alias", "error", err)
+		return nil
+	}
+
+	// 2. Enforce Receive Maximum (MQTT v5.0)
+	if err := c.enforceReceiveMaximum(p); err != nil {
+		c.opts.Logger.Error("failed to enforce receive maximum", "error", err)
+		// Protocol error: server sent too many QoS 1/2 messages
+		c.dropConnection(ReasonCodeReceiveMaximumExceed)
+		return nil
+	}
+
+	// 3. Handle QoS 2 Duplicate Detection
+	if p.QoS == 2 {
+		if ack, isDup := c.handleQoS2Duplicate(p.PacketID); isDup {
+			return []packets.Packet{ack}
+		}
+	}
+
+	// 4. Find matching handlers
+	handlers := c.matchHandlers(p.Topic)
+
+	msg := Message{
+		Topic:      p.Topic,
+		Payload:    p.Payload,
+		QoS:        QoS(p.QoS),
+		Retained:   p.Retain,
+		Duplicate:  p.Dup,
+		Properties: toPublicProperties(p.Properties),
+	}
+
+	// 5. Dispatch to handlers and acknowledge
+	return c.dispatchAndAcknowledge(p, msg, handlers)
+}
+
+// processTopicAlias handles MQTT v5.0 topic alias validation and resolution.
+func (c *Client) processTopicAlias(p *packets.PublishPacket) error {
+	if c.opts.ProtocolVersion < ProtocolV50 || p.Properties == nil || p.Properties.Presence&packets.PresTopicAlias == 0 {
+		return nil
+	}
+
+	aliasID := p.Properties.TopicAlias
+
+	// Validate alias ID
+	if aliasID == 0 {
+		c.dropConnection(ReasonCodeTopicAliasInvalid)
+		return fmt.Errorf("server sent invalid topic alias 0")
+	}
+
+	// Check if server violated our declared maximum
+	if aliasID > c.opts.TopicAliasMaximum {
+		c.dropConnection(ReasonCodeTopicAliasInvalid)
+		return fmt.Errorf("server sent topic alias %d above our maximum %d", aliasID, c.opts.TopicAliasMaximum)
+	}
+
+	if p.Topic == "" {
+		// Alias-only message - resolve to topic
+		c.receivedAliasesLock.RLock()
+		topic, exists := c.receivedAliases[aliasID]
+		c.receivedAliasesLock.RUnlock()
+
+		if !exists {
+			c.dropConnection(ReasonCodeMalformedPacket)
+			return fmt.Errorf("server sent unknown topic alias %d", aliasID)
+		}
+
+		p.Topic = topic
+		c.opts.Logger.Debug("resolved topic alias", "alias", aliasID, "topic", topic)
+	} else {
+		// Both topic and alias - register the mapping
+		c.receivedAliasesLock.Lock()
+		c.receivedAliases[aliasID] = p.Topic
+		c.receivedAliasesLock.Unlock()
+		c.opts.Logger.Debug("registered topic alias", "alias", aliasID, "topic", p.Topic)
+	}
+
+	return nil
+}
+
+// enforceReceiveMaximum checks if the incoming message exceeds the client's flow control limits.
+func (c *Client) enforceReceiveMaximum(p *packets.PublishPacket) error {
+	if c.opts.ProtocolVersion < ProtocolV50 || p.QoS == 0 {
+		return nil
+	}
+
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
+
+	if _, exists := c.inboundUnacked[p.PacketID]; !exists {
+		// New message. Check if we have capacity.
+		limit := c.opts.ReceiveMaximum
+		if limit == 0 {
+			limit = 65535
+		}
+		if len(c.inboundUnacked) >= int(limit) {
+			if c.opts.ReceiveMaximumPolicy == LimitPolicyStrict {
+				c.opts.Logger.Error("receive maximum exceeded", "limit", limit)
+				// Returning error to trigger disconnect in caller
+				return fmt.Errorf("receive maximum exceeded: %d", limit)
+			}
+
+			// Ignore policy: log warning once
+			if !c.receiveMaxExceededLogged {
+				c.opts.Logger.Warn("receive maximum exceeded, ignoring (server is misbehaving)", "limit", limit)
+				c.receiveMaxExceededLogged = true
+			}
+		}
+		c.inboundUnacked[p.PacketID] = struct{}{}
+	}
+
+	return nil
+}
+
+// handleQoS2Duplicate checks if a QoS 2 message has already been received.
+// Returns (ack, true) if it's a duplicate (processing should stop), or (nil, false) otherwise.
+func (c *Client) handleQoS2Duplicate(packetID uint16) (packets.Packet, bool) {
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
+
+	if _, exists := c.receivedQoS2[packetID]; exists {
+		// Duplicate QoS 2 message - send PUBREC but don't deliver again
+		return &packets.PubrecPacket{PacketID: packetID}, true
+	}
+	c.receivedQoS2[packetID] = struct{}{}
+
+	// Persist QoS 2 ID
+	if c.opts.SessionStore != nil {
+		if err := c.opts.SessionStore.SaveReceivedQoS2(packetID); err != nil {
+			c.opts.Logger.Warn("failed to persist QoS2 ID", "packet_id", packetID, "error", err)
+		}
+	}
+	return nil, false
+}
+
+// matchHandlers finds all handlers that match the given topic.
+func (c *Client) matchHandlers(topic string) []MessageHandler {
+	c.sessionLock.Lock()
+	handlers := c.trie.Match(topic)
+	c.sessionLock.Unlock()
+
+	// Use default handler if no matches found
+	if len(handlers) == 0 && c.defaultHandler != nil {
+		handlers = append(handlers, c.defaultHandler)
+	}
+	return handlers
+}
+
+// dispatchAndAcknowledge calls the handlers and sends the appropriate MQTT acknowledgment.
+// Returns a slice containing the acknowledgment packet if it should be sent immediately
+// (i.e. no handlers), or nil if handlers are processing the message asynchronously.
+func (c *Client) dispatchAndAcknowledge(p *packets.PublishPacket, msg Message, handlers []MessageHandler) []packets.Packet {
+	if len(handlers) == 0 {
+		ack := c.buildAckPacket(p)
+		// Clean up state after building ack
+		if p.QoS == 1 {
+			c.sessionLock.Lock()
+			delete(c.inboundUnacked, p.PacketID)
+			c.sessionLock.Unlock()
+		}
+		if ack == nil {
+			return nil // QoS 0: nothing to acknowledge
+		}
+		return []packets.Packet{ack}
+	}
+
+	if c.opts.orderedHandlers {
+		msg.Context = context.Background()
+		for _, handler := range handlers {
+			handler(c, msg)
+		}
+		c.sendAck(p)
+		return nil
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(len(handlers))
+
+	// Call handlers in separate goroutines
+	for _, handler := range handlers {
+		h := handler // Capture for goroutine
+
+		go func() {
+			defer wg.Done()
+			// Acquire semaphore if configured
+			if c.handlerSem != nil {
+				select {
+				case c.handlerSem <- struct{}{}:
+					defer func() { <-c.handlerSem }()
+				case <-c.stop:
+					return
+				}
+			}
+
+			// Create a context for the handler
+			ctx, cancel := context.WithCancel(context.Background())
+			if c.opts.HandlerTimeout > 0 {
+				ctx, cancel = context.WithTimeout(context.Background(), c.opts.HandlerTimeout)
+			}
+			defer cancel()
+
+			m := msg // each handler gets its own copy and context
+			m.Context = ctx
+			h(c, m)
+		}()
+	}
+
+	// Wait for all handlers and then acknowledge
+	go func() {
+		wg.Wait()
+		c.sendAck(p)
+	}()
+
+	return nil
+}
+
+func (c *Client) buildAckPacket(p *packets.PublishPacket) packets.Packet {
+	switch p.QoS {
+	case 1:
+		return &packets.PubackPacket{PacketID: p.PacketID}
+	case 2:
+		return &packets.PubrecPacket{PacketID: p.PacketID}
+	default:
+		return nil
+	}
+}
+
+func (c *Client) sendAck(p *packets.PublishPacket) {
+	ack := c.buildAckPacket(p)
+	if ack == nil {
+		return
+	}
+
+	select {
+	case c.outgoing <- ack:
+		if p.QoS == 1 {
+			c.sessionLock.Lock()
+			delete(c.inboundUnacked, p.PacketID)
+			c.sessionLock.Unlock()
+		}
+	case <-c.stop:
+	}
+}
+
+// finishPublishLocked completes a pending publish, cleans up tracking and store,
+// and drains the publish queue.
+// Assumes sessionLock is HELD.
+func (c *Client) finishPublishLocked(op *pendingOp, packetID uint16, err error) []packets.Packet {
+	op.token.complete(err)
+	c.removePending(packetID)
+
+	if c.opts.SessionStore != nil {
+		if storeErr := c.opts.SessionStore.DeletePendingPublish(packetID); storeErr != nil {
+			c.opts.Logger.Warn("failed to delete pending publish", "packet_id", packetID, "error", storeErr)
+		}
+	}
+
+	c.inFlightCount--
+	return c.processPublishQueueLocked()
+}
+
+// handleAck processes a PUBACK or PUBCOMP packet.
+func (c *Client) handleAck(packetID uint16, reasonCode uint8) []packets.Packet {
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
+
+	if op, ok := c.pending[packetID]; ok {
+		var err error
+		if c.opts.ProtocolVersion >= ProtocolV50 {
+			op.token.reasonCode = ReasonCode(reasonCode)
+			if reasonCode >= 0x80 {
+				err = &MqttError{
+					ReasonCode: ReasonCode(reasonCode),
+				}
+			}
+		}
+		return c.finishPublishLocked(op, packetID, err)
+	}
+	return nil
+}
+
+// handlePubrec processes a PUBREC packet (QoS 2, step 1).
+// Returns a slice containing the PUBREL packet to be sent in response.
+func (c *Client) handlePubrec(p *packets.PubrecPacket) []packets.Packet {
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
+
+	if op, ok := c.pending[p.PacketID]; ok {
+		if c.opts.ProtocolVersion >= ProtocolV50 {
+			op.token.reasonCode = ReasonCode(p.ReasonCode)
+			if p.ReasonCode >= 0x80 {
+				return c.finishPublishLocked(op, p.PacketID, &MqttError{ReasonCode: ReasonCode(p.ReasonCode)})
+			}
+		}
+
+		pubrel := &packets.PubrelPacket{PacketID: p.PacketID, Version: c.opts.ProtocolVersion}
+		// Update pending operation to track PUBREL for retransmission
+		op.packet = pubrel
+		return []packets.Packet{pubrel}
+	}
+	return nil
+}
+
+// handlePubrel processes a PUBREL packet (QoS 2, step 2).
+// Returns a slice containing the PUBCOMP packet to be sent in response.
+func (c *Client) handlePubrel(p *packets.PubrelPacket) []packets.Packet {
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
+
+	delete(c.inboundUnacked, p.PacketID)
+	delete(c.receivedQoS2, p.PacketID)
+
+	if c.opts.SessionStore != nil {
+		if err := c.opts.SessionStore.DeleteReceivedQoS2(p.PacketID); err != nil {
+			c.opts.Logger.Warn("failed to delete QoS2 ID", "packet_id", p.PacketID, "error", err)
+		}
+	}
+
+	return []packets.Packet{&packets.PubcompPacket{PacketID: p.PacketID}}
+}
+
+// handleSuback processes a SUBACK packet.
+func (c *Client) handleSuback(p *packets.SubackPacket) []packets.Packet {
+	c.sessionLock.Lock()
+	op, ok := c.pending[p.PacketID]
+	if !ok {
+		c.sessionLock.Unlock()
+		return nil
+	}
+
+	// Check for subscription failures
+	var err error
+	for _, code := range p.ReturnCodes {
+		if code >= 0x80 {
+			if c.opts.ProtocolVersion >= ProtocolV50 {
+				err = &MqttError{
+					ReasonCode: ReasonCode(code),
+					Parent:     ErrSubscriptionFailed,
+				}
+			} else {
+				err = ErrSubscriptionFailed
+			}
+			break
+		}
+	}
+
+	subPkt, isSub := op.packet.(*packets.SubscribePacket)
+	if isSub && len(p.ReturnCodes) != len(subPkt.Topics) {
+		c.opts.Logger.Warn("SUBACK return codes count mismatch",
+			"expected", len(subPkt.Topics), "got", len(p.ReturnCodes))
+		if err == nil {
+			err = fmt.Errorf("%w: return codes count mismatch (expected %d, got %d)",
+				ErrSubscriptionFailed, len(subPkt.Topics), len(p.ReturnCodes))
+		}
+	}
+
+	// Set reason code from the first return code (Subscribe operates on a single topic)
+	if len(p.ReturnCodes) > 0 {
+		op.token.reasonCode = ReasonCode(p.ReturnCodes[0])
+	}
+
+	// Drop filters the server rejected or failed to acknowledge, so they are not routed or
+	// resubscribed on every reconnect. Store writes are collected here and
+	// run after the lock is released.
+	var toDelete []string
+	toSave := map[string]*PersistedSubscription{}
+	if isSub {
+		for i, topic := range subPkt.Topics {
+			if i >= len(p.ReturnCodes) {
+				c.removeSubscriptionLocked(topic)
+				toDelete = append(toDelete, topic)
+				continue
+			}
+			if p.ReturnCodes[i] >= 0x80 {
+				c.removeSubscriptionLocked(topic)
+				toDelete = append(toDelete, topic)
+				continue
+			}
+			// Only persist if every topic succeeded and persistence is enabled (default is true)
+			if entry, ok := c.subscriptions[topic]; ok && err == nil && entry.options.Persistence {
+				toSave[topic] = c.convertToPersistedSubscription(entry)
+			}
+		}
+	}
+
+	c.removePending(p.PacketID)
+	toSend := c.processPublishQueueLocked()
+	c.sessionLock.Unlock()
+
+	if store := c.opts.SessionStore; store != nil {
+		for _, topic := range toDelete {
+			if err := store.DeleteSubscription(topic); err != nil {
+				c.opts.Logger.Warn("failed to delete subscription", "topic", topic, "error", err)
+			}
+		}
+		for topic, sub := range toSave {
+			if err := store.SaveSubscription(topic, sub); err != nil {
+				c.opts.Logger.Warn("failed to persist subscription", "topic", topic, "error", err)
+			}
+		}
+	}
+
+	// Completed after the store writes, so a caller that waits on the token
+	// and then disconnects does not close the store before they run.
+	op.token.complete(err)
+	return toSend
+}
+
+// handleUnsuback processes an UNSUBACK packet.
+func (c *Client) handleUnsuback(p *packets.UnsubackPacket) []packets.Packet {
+	c.sessionLock.Lock()
+	defer c.sessionLock.Unlock()
+
+	if op, ok := c.pending[p.PacketID]; ok {
+		var err error
+		if c.opts.ProtocolVersion >= ProtocolV50 {
+			// Set reason code from the first reason code (Unsubscribe operates on a single topic)
+			if len(p.ReasonCodes) > 0 {
+				op.token.reasonCode = ReasonCode(p.ReasonCodes[0])
+			}
+			for _, code := range p.ReasonCodes {
+				if code >= 0x80 {
+					err = &MqttError{
+						ReasonCode: ReasonCode(code),
+					}
+					break
+				}
+			}
+		}
+		op.token.complete(err)
+		c.removePending(p.PacketID)
+
+		// Delete subscriptions from store, unless the server rejected the unsubscribe
+		if c.opts.SessionStore != nil && err == nil {
+			if unsubPkt, ok := op.packet.(*packets.UnsubscribePacket); ok {
+				for _, topic := range unsubPkt.Topics {
+					if err := c.opts.SessionStore.DeleteSubscription(topic); err != nil {
+						c.opts.Logger.Warn("failed to delete subscription", "topic", topic, "error", err)
+					}
+				}
+			}
+		}
+		return c.processPublishQueueLocked()
+	}
+	return nil
+}
+
+// takeResendLocked returns what a new connection must send first: every
+// in-flight packet once, in its original order (a reconnect is the only time
+// MQTT allows a resend, [MQTT-4.4.0-1]), followed by the untracked packets
+// (QoS 0, acks) still queued in outgoing. Queued copies of in-flight packets
+// are dropped, since the resend replaces them. PUBLISH packets are resent as
+// copies with DUP set, so a stored packet is never modified.
+// Assumes sessionLock is HELD and no write loop is running.
+func (c *Client) takeResendLocked() []packets.Packet {
+	ops := slices.SortedFunc(maps.Values(c.pending), func(a, b *pendingOp) int {
+		return cmp.Compare(a.seq, b.seq)
+	})
+
+	toSend := make([]packets.Packet, 0, len(ops))
+	tracked := make(map[packets.Packet]struct{}, len(ops))
+	for _, op := range ops {
+		tracked[op.packet] = struct{}{}
+		if pub, ok := op.packet.(*packets.PublishPacket); ok {
+			dup := *pub
+			dup.Dup = true
+			toSend = append(toSend, &dup)
+		} else {
+			toSend = append(toSend, op.packet)
+		}
+	}
+
+	for range len(c.outgoing) {
+		select {
+		case pkt := <-c.outgoing:
+			if _, ok := tracked[pkt]; !ok && pkt != nil {
+				toSend = append(toSend, pkt)
+			}
+		default:
+		}
+	}
+	return toSend
+}
+
+// nextID generates the next packet ID (1-65535, cycling).
+// Returns 0 if all possible packet IDs are currently in use.
+func (c *Client) nextID() uint16 {
+	if len(c.pending) >= 65535 {
+		return 0
+	}
+
+	for range 65535 {
+		c.nextPacketID++
+		if c.nextPacketID == 0 {
+			c.nextPacketID = 1
+		}
+		if _, used := c.pending[c.nextPacketID]; !used {
+			return c.nextPacketID
+		}
+	}
+	return 0
+}
+
+// handleDisconnectPacket processes a DISCONNECT packet from the server.
+func (c *Client) handleDisconnectPacket(p *packets.DisconnectPacket) {
+	reason := "Unknown"
+	if name, ok := disconnectReasonCodeNames[ReasonCode(p.ReasonCode)]; ok {
+		reason = name
+	}
+
+	attrs := []any{
+		"reason_code", p.ReasonCode,
+		"reason", reason,
+	}
+
+	if p.Properties != nil && p.Properties.Presence&packets.PresReasonString != 0 {
+		attrs = append(attrs, "reason_string", p.Properties.ReasonString)
+	}
+
+	c.opts.Logger.Warn("received DISCONNECT from server", attrs...)
+
+	err := &DisconnectError{
+		ReasonCode: ReasonCode(p.ReasonCode),
+	}
+
+	if p.Properties != nil {
+		if p.Properties.Presence&packets.PresReasonString != 0 {
+			err.ReasonString = p.Properties.ReasonString
+		}
+		if p.Properties.Presence&packets.PresSessionExpiryInterval != 0 {
+			err.SessionExpiryInterval = p.Properties.SessionExpiryInterval
+		}
+		if p.Properties.Presence&packets.PresServerReference != 0 {
+			err.ServerReference = p.Properties.ServerReference
+		}
+		if len(p.Properties.UserProperties) > 0 {
+			err.UserProperties = make(map[string]string, len(p.Properties.UserProperties))
+			for _, up := range p.Properties.UserProperties {
+				err.UserProperties[up.Key] = up.Value
+			}
+		}
+	}
+
+	// Store for handleDisconnect to pick up
+	c.connLock.Lock()
+	c.lastDisconnectReason = err
+	c.connLock.Unlock()
+}
+
+// disconnectReasonCodeNames maps MQTT v5.0 reason codes to human-readable strings for DISCONNECT packets.
+var disconnectReasonCodeNames = map[ReasonCode]string{
+	ReasonCodeNormalDisconnect:        "Normal disconnect",
+	ReasonCodeDisconnectWithWill:      "Disconnect with Will Message",
+	ReasonCodeUnspecifiedError:        "Unspecified error",
+	ReasonCodeMalformedPacket:         "Malformed Packet",
+	ReasonCodeProtocolError:           "Protocol Error",
+	ReasonCodeImplementationError:     "Implementation specific error",
+	ReasonCodeUnsupportedProtocol:     "Unsupported Protocol Version",
+	ReasonCodeClientIdentifierInvalid: "Client Identifier not valid",
+	ReasonCodeBadUsernameOrPassword:   "Bad User Name or Password",
+	ReasonCodeNotAuthorized:           "Not authorized",
+	ReasonCodeServerMovedConnack:      "Server moved (CONNACK)",
+	ReasonCodeServerBusy:              "Server busy",
+	ReasonCodeBanned:                  "Banned",
+	ReasonCodeServerShuttingDown:      "Server shutting down",
+	ReasonCodeBadAuthenticationMethod: "Bad authentication method",
+	ReasonCodeKeepAliveTimeout:        "Keep Alive timeout",
+	ReasonCodeSessionTakenOver:        "Session taken over",
+	ReasonCodeTopicAliasExceeded:      "Topic Alias exceeded",
+	ReasonCodeTopicFilterInvalid:      "Topic Filter invalid",
+	ReasonCodeTopicNameInvalid:        "Topic Name invalid",
+	ReasonCodePacketIdentifierInUse:   "Packet identifier in use",
+	ReasonCodeReceiveMaximumExceed:    "Receive Maximum exceeded",
+	ReasonCodeTopicAliasInvalid:       "Topic Alias invalid",
+	ReasonCodePacketTooLarge:          "Packet too large",
+	ReasonCodeMessageRateTooHigh:      "Message rate too high",
+	ReasonCodeQuotaExceeded:           "Quota exceeded",
+	ReasonCodeAdministrativeAction:    "Administrative action",
+	ReasonCodePayloadFormatInvalid:    "Payload format invalid",
+	ReasonCodeRetainNotSupported:      "Retain not supported",
+	ReasonCodeQoSNotSupported:         "QoS not supported",
+	ReasonCodeUseAnotherServer:        "Use another server",
+	ReasonCodeServerMoved:             "Server moved",
+	ReasonCodeSharedSubNotSupported:   "Shared Subscriptions not supported",
+	ReasonCodeConnectionRateExceed:    "Connection rate exceeded",
+	ReasonCodeMaximumConnectTime:      "Maximum connect time",
+	ReasonCodeSubscriptionIDNotSupp:   "Subscription Identifiers not supported",
+	ReasonCodeWildcardSubNotSupp:      "Wildcard Subscriptions not supported",
+}

@@ -1,0 +1,259 @@
+// Package mq provides a lightweight, idiomatic MQTT v5.0 and v3.1.1 client library for Go.
+//
+// The library is designed with zero external dependencies (only Go standard library)
+// and provides a clean, functional options-based API for connecting to MQTT servers,
+// publishing messages, and subscribing to topics.
+//
+// # Features
+//
+//   - Full MQTT v5.0 and v3.1.1 support
+//   - (v5.0) User Properties & Packet Properties
+//   - (v5.0) Topic Aliases (auto-managed)
+//   - (v5.0) Request/Response pattern support
+//   - (v5.0) Session & Message Expiry
+//   - (v5.0) Shared Subscriptions
+//   - (v5.0) Reason Codes & Enhanced Error Handling
+//   - TLS/SSL encrypted connections
+//   - Automatic reconnection with exponential backoff
+//   - Clean, idiomatic Go API with functional options
+//   - Context-based cancellation and timeouts
+//   - High-performance Radix Tree topic routing (O(K) complexity)
+//   - Async persistence with incremental directory-based storage
+//   - Zero external dependencies (main library)
+//
+// # Unified API Philosophy
+//
+// The library exposes a single, unified API that embraces modern MQTT v5.0 concepts
+// (Properties, Reason Codes, Session Expiry). When connecting to an MQTT v3.1.1 server,
+// these v5-specific features are handled gracefully—they are simply ignored during
+// packet encoding. This allows you to write code once using modern idioms while
+// maintaining compatibility with older servers.
+//
+// # Performance and Scalability
+//
+// The library is optimized for high-concurrency environments:
+//   - Radix Tree Routing: Subscription matching scales with topic depth (O(K)) rather than the number of subscriptions.
+//   - Non-blocking Logic: The core state machine uses functional packet handling and non-blocking I/O to prevent stalled connections from affecting others.
+//   - Async Persistence: Optional background worker for session storage ensures disk latency never blocks the network path.
+//
+// # Callback Safety
+//
+// In alignment with Go's "fail-fast" philosophy, this library does not provide
+// automatic panic recovery for user-provided callbacks (MessageHandlers, OnConnect, etc.).
+// A panic in a callback will propagate and terminate the process. If you require
+// process-level resilience, you must implement recover() within your own handlers.
+//
+// # Quick Start
+//
+// Connect to a server and publish a message:
+//
+//	client, err := mq.Dial("tcp://localhost:1883",
+//	    mq.WithClientID("my-client"),
+//	    mq.WithProtocolVersion(mq.ProtocolV50)) // Use MQTT v5.0
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	defer client.Disconnect(context.Background())
+//
+//	token := client.Publish(context.Background(), "sensors/temperature", []byte("22.5"), mq.WithQoS(1))
+//	err = token.Wait(context.Background())  // 'select' also supported, see further down
+//
+// Subscribe to a topic:
+//
+//	client.Subscribe(context.Background(), "sensors/+/temperature", mq.AtLeastOnce,
+//	    func(c *mq.Client, msg mq.Message) {
+//	        fmt.Printf("%s: %s\n", msg.Topic, string(msg.Payload))
+//	    })
+//
+// # Connection Options
+//
+// The Dial and DialContext functions accept various options to configure the client:
+//
+//   - WithProtocolVersion(v) - Set MQTT version (ProtocolV50 or ProtocolV311)
+//   - WithAutoProtocolVersion(bool) - Enable automatic protocol version negotiation (default: true)
+//   - WithClientID(id) - Set the MQTT client identifier
+//   - WithCredentials(user, pass) - Set username and password
+//   - WithKeepAlive(duration) - Set keepalive interval (default: 60s)
+//   - WithCleanSession(bool) - Set clean start/session flag
+//   - WithSessionExpiryInterval(secs) - Set session expiry (v5.0)
+//   - WithConnectUserProperties(map) - Set user properties for CONNECT (v5.0)
+//   - WithAutoReconnect(bool) - Enable auto-reconnect (default: true)
+//   - WithReconnectBackoff(initial, max, jitter) - Set auto-reconnect initial backoff, max ceiling, and Full Jitter
+//   - WithTLS(config) - Enable TLS encryption
+//   - WithWill(topic, payload, qos, retained) - Set Last Will and Testament
+//   - WithWillDelayInterval(secs) - Set Will Delay Interval for LWT (v5.0)
+//   - WithOutgoingQueueSize(int) - Set internal outgoing buffer size
+//   - WithIncomingQueueSize(int) - Set internal incoming buffer size
+//   - WithQoS0LimitPolicy(policy) - Set reliability policy for QoS 0
+//   - WithHandlerInterceptor(interceptor) - Add an interceptor for incoming messages
+//   - WithPublishInterceptor(interceptor) - Add an interceptor for outgoing messages
+//
+// # Interceptors (Middleware)
+//
+// The library supports an interceptor pattern (middleware) for both incoming
+// and outgoing messages. This is useful for cross-cutting concerns like
+// logging, metrics, tracing (OpenTelemetry), or message auditing.
+//
+// Handler Interceptors wrap message handlers for incoming messages:
+//
+//	loggingInterceptor := func(next mq.MessageHandler) mq.MessageHandler {
+//	    return func(c *mq.Client, m mq.Message) {
+//	        log.Printf("Received: %s", m.Topic)
+//	        next(c, m)
+//	    }
+//	}
+//
+//	client, _ := mq.Dial(uri, mq.WithHandlerInterceptor(loggingInterceptor))
+//
+// Publish Interceptors wrap the Publish call for outgoing messages:
+//
+//	tracingInterceptor := func(next mq.PublishFunc) mq.PublishFunc {
+//	    return func(ctx context.Context, topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
+//	        // Inject tracing headers into opts here
+//	        return next(ctx, topic, payload, opts...)
+//	    }
+//	}
+//
+//	client, _ := mq.Dial(uri, mq.WithPublishInterceptor(tracingInterceptor))
+//
+// # TLS Connections
+//
+// The library supports TLS/SSL encrypted connections:
+//
+//	client, err := mq.Dial("tls://server:8883",
+//	    mq.WithClientID("secure-client"),
+//	    mq.WithTLS(&tls.Config{
+//	        InsecureSkipVerify: false,
+//	    }))
+//
+// Supported URL schemes: tcp://, mqtt://, tls://, ssl://, mqtts://
+//
+// # Quality of Service
+//
+// The library supports all three MQTT QoS levels:
+//
+//   - QoS 0 (mq.AtMostOnce): At most once delivery (fire and forget)
+//   - QoS 1 (mq.AtLeastOnce): At least once delivery (acknowledged)
+//   - QoS 2 (mq.ExactlyOnce): Exactly once delivery (assured)
+//
+// Example:
+//
+//	// Using named constants (recommended)
+//	client.Publish(context.Background(), "topic", []byte("data"), mq.WithQoS(mq.AtLeastOnce))
+//
+//	// Using numeric values
+//	client.Publish(context.Background(), "topic", []byte("data"), mq.WithQoS(1))
+//
+// # Wildcard Subscriptions
+//
+// MQTT supports two wildcard characters in topic filters:
+//
+//   - '+' matches a single level (e.g., "sensors/+/temperature")
+//   - '#' matches multiple levels (e.g., "sensors/#")
+//
+// Example:
+//
+//	// Subscribe to all temperature sensors
+//	client.Subscribe(context.Background(), "sensors/+/temperature", mq.AtLeastOnce, handler)
+//
+//	// Subscribe to all sensor data
+//	client.Subscribe(context.Background(), "sensors/#", mq.AtMostOnce, handler)
+//
+// # MQTT v5.0 Properties
+//
+// MQTT v5.0 introduces "Properties" that can be attached to packets. This
+// library provides a clean API for using common properties:
+//
+//	client.Publish(context.Background(), "sensors/temp", payload,
+//	    mq.WithContentType("application/json"),
+//	    mq.WithUserProperty("sensor-id", "temp-01"),
+//	    mq.WithMessageExpiry(3600)) // Expire in 1 hour
+//
+// Supported properties include:
+//   - ContentType: Specifies the MIME type of the payload
+//   - MessageExpiry: How long the message should be kept by the server
+//   - UserProperties: Custom key-value pairs (metadata)
+//   - ConnectionUserProperties: Custom metadata received from the server on connect (v5.0)
+//   - ResponseTopic & CorrelationData: For request/response patterns
+//
+// # Topic Aliases
+//
+// Topic Aliases (v5.0) allow reducing bandwidth by using a short numeric ID
+// instead of the full topic string for repeated publications.
+//
+//	// Enable topic alias for this publication
+//	client.Publish(context.Background(), "very/long/topic/name/for/bandwidth/saving", data,
+//	    mq.WithAlias())
+//
+// The library automatically manages alias assignment and mapping.
+//
+// # Subscription Options (v5.0)
+//
+// MQTT v5.0 adds options to control subscription behavior:
+//
+//   - WithNoLocal: Don't receive messages you published yourself
+//   - WithRetainAsPublished: Keep the original retain flag from the publisher
+//   - WithRetainHandling: Control when the server sends retained messages
+//   - WithSubscriptionIdentifier: Set a numeric identifier for the subscription
+//   - WithSubscribeUserProperty: Add custom metadata to the subscription
+//
+// Example:
+//
+//	client.Subscribe(context.Background(), "chat/room", mq.AtLeastOnce, handler,
+//	    mq.WithNoLocal(true))
+//
+// # Client-side Session Persistence
+//
+// The library supports pluggable session persistence to save pending messages (QoS 1 & 2)
+// and subscriptions across restarts.
+//
+//	baseStore, _ := mq.NewFileStore("/path/to/persist", "client-id")
+//	store := mq.NewAsyncStore(baseStore, 1000)
+//	defer store.Close()
+//
+//	client, _ := mq.Dial(server,
+//	    mq.WithClientID("client-id"),
+//	    mq.WithCleanSession(false),
+//	    mq.WithSessionStore(store),
+//	    // persistent subscription
+//	    mq.WithSubscription("topic", handler),
+//	)
+//
+// # Error Handling
+//
+// Operations return a Token that can be used for both blocking and non-blocking
+// error handling. In MQTT v5.0, errors often include Reason Codes.
+//
+//	// Blocking with timeout
+//	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+//	defer cancel()
+//	if err := token.Wait(ctx); err != nil {
+//	    // Check for specific reason codes (v5.0) using errors.Is
+//	    if errors.Is(err, mq.ReasonCodeUnspecifiedError) {
+//	        log.Printf("Server rejected operation: %v", err)
+//	    }
+//	}
+//
+//	// Non-blocking with select
+//	select {
+//	case <-token.Done():
+//	    if err := token.Error(); err != nil {
+//	        log.Printf("Failed: %v", err)
+//	    }
+//	case <-time.After(5 * time.Second):
+//	    log.Println("Timeout")
+//	}
+//
+//	// Connection can be closed with a specific reason code and properties (MQTT v5.0):
+//
+//	expiry := uint32(3600)
+//	client.Disconnect(ctx,
+//	    mq.WithReason(mq.ReasonCodeNormalDisconnect),
+//	    mq.WithDisconnectProperties(&mq.Properties{
+//	        SessionExpiryInterval: &expiry,
+//	        ReasonString:          "Shutting down",
+//	    }),
+//	)
+//
+// The client handles reconnection automatically unless configured otherwise.
+package mq

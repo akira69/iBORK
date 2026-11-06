@@ -1,0 +1,52 @@
+.cooling-panel,
+.diagnostics-terminal {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.cooling-panel p,
+.diagnostics-terminal p {
+  margin: 0;
+}
+.cooling-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+}
+.cooling-limit {
+  color: var(--muted, #a1aab8);
+}
+.diagnostics-terminal pre {
+  height: 280px;
+  min-height: 120px;
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  padding: 12px;
+  background: #0a1018;
+  color: #dbe5f3;
+  border: 1px solid var(--border, #354153);
+  border-radius: 8px;
+  font:
+    12px/1.55 Consolas,
+    monospace;
+}
+.diagnostics-terminal form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+.diagnostics-terminal label {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+  min-width: 160px;
+}
+.diagnostics-terminal input {
+  width: 100%;
+  box-sizing: border-box;
+}

@@ -1,0 +1,123 @@
+.console-keyboard-launcher {
+  display: none;
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 5;
+  max-width: calc(100% - 16px);
+}
+@media (any-pointer: coarse) {
+  .console-keyboard-launcher {
+    display: inline-flex;
+  }
+}
+.console-keyboard-dock {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  width: 640px;
+  max-width: calc(100% - 16px);
+}
+.wall-preview .console-keyboard-launcher {
+  display: none;
+}
+.console-keyboard-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  font-size: 16px;
+  pointer-events: none;
+}
+.console-keyboard-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 48px;
+  padding: 3px;
+  border: 1px solid #3b6468;
+  border-radius: 10px;
+  background: #102028f5;
+  box-shadow: 0 4px 20px #0008;
+}
+.console-keyboard-row {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  align-items: center;
+  gap: 4px;
+  overscroll-behavior-x: contain;
+}
+.console-keyboard-row::-webkit-scrollbar {
+  display: none;
+}
+.console-keyboard button {
+  flex-shrink: 0;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 6px 8px;
+  touch-action: manipulation;
+}
+.console-keyboard button[aria-pressed="true"] {
+  color: #102028;
+  background: #76d6aa;
+}
+.console-keyboard-row-switch {
+  flex-direction: column;
+  gap: 0;
+  font-size: 10px;
+  width: 44px;
+}
+.console-keyboard p {
+  position: absolute;
+  bottom: 100%;
+  margin: 4px;
+  padding: 6px;
+  background: #102028;
+  border: 1px solid #3b6468;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.vnc-console {
+  position: relative;
+}
+.mobile-console-view:popover-open {
+  position: fixed;
+  inset: auto;
+  top: calc(var(--typing-top) + 64px);
+  left: var(--typing-left);
+  width: var(--typing-width);
+  /* Keep 64px for server keys and 56px clear of the iOS input accessory. */
+  height: max(0px, calc(var(--typing-height) - 120px));
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: #080e12;
+}
+.mobile-console-view::backdrop {
+  background: #080e12;
+}
+.mobile-console-view .fullscreen,
+.mobile-console-view .console-keyboard-launcher {
+  display: none;
+}
+.console-keyboard-dock.mobile-console-keys {
+  inset: auto !important;
+  top: calc(var(--typing-top) + 8px) !important;
+  left: calc(var(--typing-left) + 8px) !important;
+  width: calc(var(--typing-width) - 16px);
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  transform: none;
+  background: transparent;
+  overflow: visible;
+}

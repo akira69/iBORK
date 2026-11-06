@@ -1,0 +1,407 @@
+package mq
+
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"io"
+	"net"
+	"net/url"
+	"time"
+
+	"github.com/gonzalop/mq/internal/packets"
+)
+
+// dialServer establishes a TCP, TLS, or custom connection to the MQTT server.
+func (c *Client) dialServer(ctx context.Context) (net.Conn, error) {
+	// If a custom dialer is provided, trust it to handle the scheme and address.
+	// Pass the raw server string as the address to allow flexibility (e.g. WebSocket paths).
+	if c.opts.Dialer != nil {
+		network := "tcp"
+		if u, err := url.Parse(c.opts.Server); err == nil && u.Scheme != "" {
+			network = u.Scheme
+		}
+
+		conn, err := c.opts.Dialer.DialContext(ctx, network, c.opts.Server)
+		if err != nil {
+			return nil, fmt.Errorf("custom dialer failed: %w", err)
+		}
+		return conn, nil
+	}
+
+	u, err := url.Parse(c.opts.Server)
+	if err != nil {
+		return nil, fmt.Errorf("invalid server URL: %w", err)
+	}
+
+	if u.Port() == "" {
+		switch u.Scheme {
+		case "tls", "ssl", "mqtts":
+			u.Host = net.JoinHostPort(u.Host, "8883")
+		case "tcp", "mqtt", "":
+			u.Host = net.JoinHostPort(u.Host, "1883")
+		}
+	}
+
+	useTLS := u.Scheme == "tls" || u.Scheme == "ssl" || u.Scheme == "mqtts" || c.opts.TLSConfig != nil
+	if !useTLS && u.Scheme != "tcp" && u.Scheme != "mqtt" {
+		return nil, fmt.Errorf("unsupported scheme: %s (supported: tcp, mqtt, tls, ssl, mqtts)", u.Scheme)
+	}
+
+	var conn net.Conn
+	if useTLS {
+		tlsConfig := c.opts.TLSConfig
+		if tlsConfig == nil {
+			tlsConfig = &tls.Config{}
+		}
+		dialer := &tls.Dialer{
+			NetDialer: &net.Dialer{},
+			Config:    tlsConfig,
+		}
+		conn, err = dialer.DialContext(ctx, "tcp", u.Host)
+	} else {
+		var d net.Dialer
+		conn, err = d.DialContext(ctx, "tcp", u.Host)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to server: %w", err)
+	}
+
+	return conn, nil
+}
+
+// buildConnectPacket creates a CONNECT packet with the client's configuration.
+func (c *Client) buildConnectPacket() *packets.ConnectPacket {
+	// Use the original requested keepalive, not the potentially server-overridden value
+	keepalive := c.requestedKeepAlive
+
+	pkt := &packets.ConnectPacket{
+		ProtocolName:  "MQTT",
+		ProtocolLevel: c.opts.ProtocolVersion,
+		CleanSession:  c.opts.CleanSession,
+		KeepAlive:     uint16(keepalive.Seconds()),
+		ClientID:      c.opts.ClientID,
+	}
+
+	// Add MQTT v5.0 properties if using v5.0
+	if c.opts.ProtocolVersion >= ProtocolV50 {
+		pkt.Properties = &packets.Properties{}
+
+		if c.opts.RequestProblemInformation {
+			pkt.Properties.RequestProblemInformation = 1
+			pkt.Properties.Presence |= packets.PresRequestProblemInformation
+		}
+
+		if c.opts.RequestResponseInformation {
+			pkt.Properties.RequestResponseInformation = 1
+			pkt.Properties.Presence |= packets.PresRequestResponseInformation
+		}
+
+		if c.opts.TopicAliasMaximum > 0 {
+			pkt.Properties.TopicAliasMaximum = c.opts.TopicAliasMaximum
+			pkt.Properties.Presence |= packets.PresTopicAliasMaximum
+		}
+
+		if c.opts.SessionExpirySet {
+			pkt.Properties.SessionExpiryInterval = c.opts.SessionExpiryInterval
+			pkt.Properties.Presence |= packets.PresSessionExpiryInterval
+		}
+
+		if c.opts.ReceiveMaximum > 0 {
+			pkt.Properties.ReceiveMaximum = c.opts.ReceiveMaximum
+			pkt.Properties.Presence |= packets.PresReceiveMaximum
+		}
+
+		if c.opts.MaxIncomingPacket > 0 {
+			pkt.Properties.MaximumPacketSize = uint32(c.opts.MaxIncomingPacket)
+			pkt.Properties.Presence |= packets.PresMaximumPacketSize
+		}
+
+		if len(c.opts.ConnectUserProperties) > 0 {
+			pkt.Properties.UserProperties = make([]packets.UserProperty, 0, len(c.opts.ConnectUserProperties))
+			for k, v := range c.opts.ConnectUserProperties {
+				pkt.Properties.UserProperties = append(pkt.Properties.UserProperties, packets.UserProperty{
+					Key:   k,
+					Value: v,
+				})
+			}
+		}
+
+		if c.opts.Authenticator != nil {
+			pkt.Properties.AuthenticationMethod = c.opts.Authenticator.Method()
+			pkt.Properties.Presence |= packets.PresAuthenticationMethod
+
+			initialData, err := c.opts.Authenticator.InitialData()
+			if err != nil {
+				c.opts.Logger.Error("failed to get initial auth data", "error", err)
+			} else if len(initialData) > 0 {
+				pkt.Properties.AuthenticationData = initialData
+			}
+		}
+	}
+
+	if c.opts.Username != "" {
+		pkt.UsernameFlag = true
+		pkt.Username = c.opts.Username
+	}
+	if c.opts.Password != "" {
+		pkt.PasswordFlag = true
+		pkt.Password = c.opts.Password
+	}
+
+	if c.opts.will != nil {
+		pkt.WillFlag = true
+		pkt.WillTopic = c.opts.will.Topic
+		pkt.WillMessage = c.opts.will.Payload
+		pkt.WillQoS = c.opts.will.QoS
+		pkt.WillRetain = c.opts.will.Retained
+
+		if c.opts.will.Properties != nil {
+			pkt.WillProperties = toPublishProperties(c.opts.will.Properties)
+		}
+	}
+
+	return pkt
+}
+
+// sendConnectPacket builds and sends the CONNECT packet.
+func (c *Client) sendConnectPacket(w io.Writer) error {
+	connectPkt := c.buildConnectPacket()
+	if p := connectPkt.Properties; p != nil {
+		if err := checkAuthFieldLengths(p.AuthenticationMethod, p.AuthenticationData); err != nil {
+			return fmt.Errorf("failed to send CONNECT: %w", err)
+		}
+	}
+	if _, err := connectPkt.WriteTo(w); err != nil {
+		return fmt.Errorf("failed to send CONNECT: %w", err)
+	}
+	c.packetsSent.Add(1)
+	return nil
+}
+
+// validateConnack checks the CONNACK return code and returns a detailed error if rejected.
+func (c *Client) validateConnack(conn net.Conn, connack *packets.ConnackPacket) error {
+	if connack.ReturnCode == packets.ConnAccepted {
+		return nil
+	}
+
+	conn.Close()
+
+	if c.opts.ProtocolVersion >= ProtocolV50 {
+		err := &MqttError{
+			ReasonCode: ReasonCode(connack.ReturnCode),
+			Parent:     ErrConnectionRefused,
+		}
+		if connack.Properties != nil && connack.Properties.Presence&packets.PresReasonString != 0 {
+			err.Message = connack.Properties.ReasonString
+		}
+		return err
+	}
+
+	switch connack.ReturnCode {
+	case packets.ConnRefusedUnacceptableProtocol:
+		return ErrUnacceptableProtocolVersion
+	case packets.ConnRefusedIdentifierRejected:
+		return ErrIdentifierRejected
+	case packets.ConnRefusedServerUnavailable:
+		return ErrServerUnavailable
+	case packets.ConnRefusedBadUsernameOrPassword:
+		return ErrBadUsernameOrPassword
+	case packets.ConnRefusedNotAuthorized:
+		return ErrNotAuthorized
+	default:
+		return fmt.Errorf("%w: code %d", ErrConnectionRefused, connack.ReturnCode)
+	}
+}
+
+// finalizeConnection processes CONNACK properties and starts background loops.
+// It fails if Disconnect stopped the client while the connection was being
+// established: the new connection is then closed and nothing is started.
+func (c *Client) finalizeConnection(connack *packets.ConnackPacket) error {
+	if c.stopped() {
+		c.connLock.Lock()
+		conn := c.conn
+		c.conn = nil
+		c.connLock.Unlock()
+		if conn != nil {
+			conn.Close()
+		}
+		return ErrClientDisconnected
+	}
+
+	// Taken first, before resubscribeAll can add new SUBSCRIBEs to pending.
+	c.sessionLock.Lock()
+	resend := c.takeResendLocked()
+	c.sessionLock.Unlock()
+
+	// Reset keepalive to requested value before processing server override
+	c.opts.KeepAlive = c.requestedKeepAlive
+
+	c.processConnackProperties(connack)
+
+	if c.opts.CleanSession {
+		c.internalResetState()
+	} else {
+		if err := c.checkSessionPresent(connack.SessionPresent); err != nil {
+			c.opts.Logger.Warn("failed to check session present", "error", err)
+		}
+	}
+
+	// Disconnect may have stopped the client since the check above. It closes
+	// stop before taking connLock and clears connected under it, so checking
+	// here under connLock means either we see the stop, or Disconnect runs
+	// after us and undoes what we set.
+	connDone := make(chan struct{})
+	c.connLock.Lock()
+	if c.stopped() || c.conn == nil {
+		conn := c.conn
+		c.conn = nil
+		c.connLock.Unlock()
+		if conn != nil {
+			conn.Close()
+		}
+		return ErrClientDisconnected
+	}
+	c.connDone = connDone
+	readDone := make(chan struct{})
+	c.readDone = readDone
+	conn := c.conn
+	c.connected.Store(true)
+	c.connectedAt.Store(time.Now().UnixNano())
+	c.connLock.Unlock()
+
+	c.opts.Logger.Debug("connection established", "server", c.opts.Server)
+
+	if c.opts.Authenticator != nil {
+		if err := c.opts.Authenticator.Complete(); err != nil {
+			c.opts.Logger.Warn("authenticator complete failed", "error", err)
+		}
+	}
+
+	if c.opts.OnConnect != nil {
+		go func() {
+			c.opts.OnConnect(c)
+		}()
+	}
+
+	c.wg.Add(2)
+	c.activeLoops.Add(2)
+	go c.runReadLoop(conn, readDone)
+	go c.runWriteLoop(conn, connDone, c.opts.KeepAlive)
+
+resendLoop:
+	for _, pkt := range resend {
+		select {
+		case c.outgoing <- pkt:
+		case <-connDone:
+			break resendLoop
+		case <-c.stop:
+			break resendLoop
+		}
+	}
+
+	// Without a session on the broker (a clean session, or a persistent one
+	// the broker no longer has), every subscription must be sent again.
+	if c.opts.CleanSession || !connack.SessionPresent {
+		go c.resubscribeAll(connDone)
+	}
+
+	c.opts.Logger.Debug("client started", "client_id", c.opts.ClientID)
+	return nil
+}
+
+// prepareConnectionState resets internal state before a connection attempt.
+func (c *Client) prepareConnectionState() {
+	if c.requestedSessionExpiry == 0 && c.opts.SessionExpirySet {
+		c.requestedSessionExpiry = c.opts.SessionExpiryInterval
+	}
+
+	c.receivedAliasesLock.Lock()
+	c.receivedAliases = make(map[uint16]string)
+	c.receivedAliasesLock.Unlock()
+
+	// logicLoop outlives the connection and may still be handling packets
+	// from the old one, so this flag needs the same lock it uses.
+	c.sessionLock.Lock()
+	c.receiveMaxExceededLogged = false
+	c.sessionLock.Unlock()
+}
+
+// conn is the connection being handshaken. It is passed in rather than read
+// from c.conn, which Disconnect may set to nil concurrently.
+func (c *Client) performHandshake(ctx context.Context, conn net.Conn, r io.Reader, w io.Writer) (connack *packets.ConnackPacket, err error) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(c.opts.ConnectTimeout)
+	}
+
+	_ = conn.SetReadDeadline(deadline)
+	defer func() { _ = conn.SetReadDeadline(time.Time{}) }()
+
+	c.authExchangeCount.Store(0)
+
+	for {
+		pkt, err := packets.ReadPacket(r, c.opts.ProtocolVersion, c.opts.MaxIncomingPacket)
+		if err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("failed to read packet: %w", err)
+		}
+		c.packetsReceived.Add(1)
+
+		switch p := pkt.(type) {
+		case *packets.ConnackPacket:
+			return p, nil
+
+		case *packets.AuthPacket:
+			if c.opts.ProtocolVersion < ProtocolV50 {
+				conn.Close()
+				return nil, fmt.Errorf("received AUTH packet in v3.1.1")
+			}
+			if c.opts.Authenticator == nil {
+				conn.Close()
+				return nil, fmt.Errorf("received AUTH packet but no authenticator configured")
+			}
+
+			count := c.authExchangeCount.Add(1)
+			if c.opts.MaxAuthExchanges > 0 && count > uint32(c.opts.MaxAuthExchanges) {
+				conn.Close()
+				return nil, fmt.Errorf("maximum authentication exchanges (%d) exceeded", c.opts.MaxAuthExchanges)
+			}
+
+			var challengeData []byte
+			if p.Properties != nil {
+				challengeData = p.Properties.AuthenticationData
+			}
+			respData, err := c.opts.Authenticator.HandleChallenge(challengeData, p.ReasonCode)
+			if err == nil {
+				err = checkAuthFieldLengths(c.opts.Authenticator.Method(), respData)
+			}
+			if err != nil {
+				conn.Close()
+				return nil, fmt.Errorf("authentication failed: %w", err)
+			}
+
+			// Send AUTH response
+			authResp := &packets.AuthPacket{
+				Version:    ProtocolV50,
+				ReasonCode: packets.AuthReasonContinue, // 0x18
+				Properties: &packets.Properties{
+					AuthenticationMethod: c.opts.Authenticator.Method(),
+					AuthenticationData:   respData,
+					Presence:             packets.PresAuthenticationMethod,
+				},
+			}
+
+			if _, err := authResp.WriteTo(w); err != nil {
+				conn.Close()
+				return nil, fmt.Errorf("failed to send AUTH response: %w", err)
+			}
+			c.packetsSent.Add(1)
+
+		default:
+			conn.Close()
+			return nil, fmt.Errorf("expected CONNACK or AUTH, got packet type %d", pkt.Type())
+		}
+	}
+}

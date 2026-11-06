@@ -1,0 +1,9 @@
+[
+  {"label":"Core 0","unit":"C","value":45,"warning":80,"critical":100,"type":"temperature_core"},
+  {"label":"Package id 0","unit":"C","value":48,"warning":80,"critical":100,"type":"temperature_core"},
+  {"label":"TA0P","unit":"C","value":37,"type":"temperature_core"},
+  {"label":"TA0p","unit":"C","value":38,"type":"temperature_core"},
+  {"label":"TH0A","unit":"C","value":-127,"type":"temperature_core"},
+  {"label":"drivetemp 0","unit":"C","value":35,"type":"temperature_hdd"},
+  {"label":"Exhaust","unit":"R","value":1500,"type":"fan_speed"}
+]

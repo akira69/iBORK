@@ -1,0 +1,15 @@
+.research/
+.tools/
+.superpowers/
+node_modules/
+web/dist/
+dist/
+coverage/
+test-results/
+playwright-report/
+.env
+*.log
+*.exe
+*.local
+*.tsbuildinfo
+data/

@@ -1,0 +1,31 @@
+.sol-console {
+  display: flex;
+  flex-direction: column;
+  min-height: 18rem;
+  height: 100%;
+  min-width: 0;
+  padding: 0.75rem;
+  background: #0c1118;
+  color: #dbe4ee;
+}
+.sol-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.sol-toolbar [role="status"] {
+  flex: 1;
+}
+.sol-hint {
+  color: #aab9ca;
+  font-size: 0.8rem;
+}
+.sol-terminal {
+  flex: 1;
+  min-height: 12rem;
+  overflow: hidden;
+}
+.sol-console:fullscreen {
+  height: 100vh;
+}

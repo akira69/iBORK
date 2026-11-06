@@ -1,0 +1,33 @@
+[Unit]
+Description=iBORK server console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+DynamicUser=yes
+StateDirectory=jet-supermicro
+StateDirectoryMode=0700
+ExecStart=/opt/jet-supermicro/jet-supermicro
+EnvironmentFile=/etc/jet-supermicro/config.env
+LoadCredentialEncrypted=app-password-hash:/etc/jet-supermicro/app-password-hash.cred
+# Provider credentials are optional until the operator configures a device.
+SetCredential=ipmi-password:
+SetCredential=jetkvm-password:
+LoadCredentialEncrypted=ipmi-password:/etc/jet-supermicro/ipmi-password.cred
+LoadCredentialEncrypted=jetkvm-password:/etc/jet-supermicro/jetkvm-password.cred
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

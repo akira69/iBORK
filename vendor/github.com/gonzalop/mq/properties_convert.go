@@ -1,0 +1,173 @@
+package mq
+
+import "github.com/gonzalop/mq/internal/packets"
+
+// toPublicProperties converts internal packet properties to the public API format.
+// Returns nil if the internal properties are nil or empty.
+func toPublicProperties(internal *packets.Properties) *Properties {
+	if internal == nil {
+		return nil
+	}
+
+	// Check if properties are actually empty
+	if isEmpty(internal) {
+		return nil
+	}
+
+	props := &Properties{
+		UserProperties: make(map[string]string),
+	}
+
+	// Convert simple string fields
+	if internal.Presence&packets.PresContentType != 0 {
+		props.ContentType = internal.ContentType
+	}
+	if internal.Presence&packets.PresResponseTopic != 0 {
+		props.ResponseTopic = internal.ResponseTopic
+	}
+
+	// Convert byte slices
+	if internal.Presence&packets.PresCorrelationData != 0 {
+		props.CorrelationData = internal.CorrelationData
+	}
+
+	// Convert optional numeric fields
+	if internal.Presence&packets.PresMessageExpiryInterval != 0 {
+		val := internal.MessageExpiryInterval
+		props.MessageExpiry = &val
+	}
+	if internal.Presence&packets.PresPayloadFormatIndicator != 0 {
+		val := internal.PayloadFormatIndicator
+		props.PayloadFormat = &val
+	}
+	if internal.Presence&packets.PresWillDelayInterval != 0 {
+		val := internal.WillDelayInterval
+		props.WillDelayInterval = &val
+	}
+	if internal.Presence&packets.PresSessionExpiryInterval != 0 {
+		val := internal.SessionExpiryInterval
+		props.SessionExpiryInterval = &val
+	}
+
+	// Convert subscription identifiers (receive-only)
+	if len(internal.SubscriptionIdentifier) > 0 {
+		props.SubscriptionIdentifier = internal.SubscriptionIdentifier
+	}
+
+	// Convert reason string (receive-only)
+	if internal.Presence&packets.PresReasonString != 0 {
+		props.ReasonString = internal.ReasonString
+	}
+
+	// Convert user properties
+	if len(internal.UserProperties) > 0 {
+		props.UserPropertyList = make([]UserProperty, len(internal.UserProperties))
+		for i, up := range internal.UserProperties {
+			props.UserPropertyList[i] = UserProperty{Key: up.Key, Value: up.Value}
+			props.UserProperties[up.Key] = up.Value
+		}
+	}
+
+	return props
+}
+
+// toPublishProperties is toInternalProperties for PUBLISH and will
+// properties, where MQTT v5 does not allow ReasonString, so it is dropped.
+func toPublishProperties(public *Properties) *packets.Properties {
+	props := toInternalProperties(public)
+	if props != nil {
+		props.ReasonString = ""
+		props.Presence &^= packets.PresReasonString
+	}
+	return props
+}
+
+// toInternalProperties converts public API properties to internal packet format.
+// Returns nil if the public properties are nil.
+func toInternalProperties(public *Properties) *packets.Properties {
+	if public == nil {
+		return nil
+	}
+
+	props := &packets.Properties{}
+
+	// Convert simple string fields
+	if public.ContentType != "" {
+		props.ContentType = public.ContentType
+		props.Presence |= packets.PresContentType
+	}
+	if public.ResponseTopic != "" {
+		props.ResponseTopic = public.ResponseTopic
+		props.Presence |= packets.PresResponseTopic
+	}
+	if public.ReasonString != "" {
+		props.ReasonString = public.ReasonString
+		props.Presence |= packets.PresReasonString
+	}
+
+	// Convert byte slices
+	if len(public.CorrelationData) > 0 {
+		props.CorrelationData = public.CorrelationData
+		props.Presence |= packets.PresCorrelationData
+	}
+
+	// Convert optional numeric fields
+	if public.MessageExpiry != nil {
+		props.MessageExpiryInterval = *public.MessageExpiry
+		props.Presence |= packets.PresMessageExpiryInterval
+	}
+	if public.PayloadFormat != nil {
+		props.PayloadFormatIndicator = *public.PayloadFormat
+		props.Presence |= packets.PresPayloadFormatIndicator
+	}
+	if public.WillDelayInterval != nil {
+		props.WillDelayInterval = *public.WillDelayInterval
+		props.Presence |= packets.PresWillDelayInterval
+	}
+	if public.SessionExpiryInterval != nil {
+		props.SessionExpiryInterval = *public.SessionExpiryInterval
+		props.Presence |= packets.PresSessionExpiryInterval
+	}
+
+	// Convert user properties
+	if len(public.UserPropertyList) > 0 {
+		props.UserProperties = make([]packets.UserProperty, 0, len(public.UserPropertyList)+len(public.UserProperties))
+		seen := make(map[string]struct{}, len(public.UserPropertyList))
+		for _, up := range public.UserPropertyList {
+			props.UserProperties = append(props.UserProperties, packets.UserProperty{
+				Key:   up.Key,
+				Value: up.Value,
+			})
+			seen[up.Key] = struct{}{}
+		}
+		for key, value := range public.UserProperties {
+			if _, ok := seen[key]; !ok {
+				props.UserProperties = append(props.UserProperties, packets.UserProperty{
+					Key:   key,
+					Value: value,
+				})
+			}
+		}
+	} else if len(public.UserProperties) > 0 {
+		props.UserProperties = make([]packets.UserProperty, 0, len(public.UserProperties))
+		for key, value := range public.UserProperties {
+			props.UserProperties = append(props.UserProperties, packets.UserProperty{
+				Key:   key,
+				Value: value,
+			})
+		}
+	}
+
+	return props
+}
+
+// isEmpty checks if internal properties are effectively empty.
+func isEmpty(p *packets.Properties) bool {
+	if p == nil {
+		return true
+	}
+
+	return p.Presence == 0 &&
+		len(p.UserProperties) == 0 &&
+		len(p.SubscriptionIdentifier) == 0
+}

@@ -1,0 +1,114 @@
+# MQTT Client Library for Go
+
+
+[![Go Reference](https://pkg.go.dev/badge/github.com/gonzalop/mq.svg)](https://pkg.go.dev/github.com/gonzalop/mq)
+[![Tests](https://github.com/gonzalop/mq/workflows/Tests/badge.svg)](https://github.com/gonzalop/mq/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+A lightweight, idiomatic MQTT client library for Go with full support for v3.1.1 and v5.0 with a unified API, built using only the standard library.
+
+## Supported Features
+- **MQTT v3.1.1 & v5.0**: Full support for both protocol versions
+  - **Unified API**: Write modern v5-style code (Properties, Reason Codes) that automatically degrades on v3 servers.
+  - **Auto-Negotiation**: Automatically falls back to v3.1.1 if v5.0 is not supported by the server.
+- **High Performance**:
+  - **Radix Tree Routing**: O(K) topic matching for high-subscription environments.
+  - **Non-blocking I/O**: Core state machine uses a non-blocking logic loop to maximize throughput.
+- **Persistence**: Durable Session Persistence (CleanSession=false) with incremental disk storage and optional asynchronous background worker (see [docs/persistence.md](docs/persistence.md)).
+- **Auto-Reconnect**: Built-in exponential backoff with anti-flapping protection (see [Examples](./examples))
+- **Transport**: TCP and TLS directly, WebSockets via `WithDialer` (see [Examples](./examples))
+- **Middleware/Interceptors**: Intercept inbound/outbound messages for logging, metrics, or tracing.
+- **Context Awareness**: `context.Context` support for cancellation/timeouts
+- **MQTT v5.0 Features**:
+  - **Message Properties**: Content Type, User Properties, Request/Response, Message Expiry
+  - **Connection Config**: Session Expiry, Request Problem/Response Info, User Properties
+  - **Bandwidth**: Topic Aliases (Client & Server)
+  - **Flow Control**: Receive Maximum, Max Packet Size
+  - **Subscription**: NoLocal, RetainAsPublished, RetainHandling, Shared Subscriptions
+
+For code demonstrations of these features, see the **[Examples Index](examples/README.md)**.
+
+## Installation
+
+```bash
+go get github.com/gonzalop/mq
+```
+
+## Quick Start
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log/slog"
+    "os"
+    "time"
+
+    "github.com/gonzalop/mq"
+)
+
+func main() {
+    // Connect to server
+    client, err := mq.Dial(
+        "tcp://localhost:1883",
+        mq.WithClientID("my-client"),
+        mq.WithKeepAlive(60*time.Second),
+    )
+    if err != nil {
+        slog.Error("Failed to connect", "error", err)
+        os.Exit(1)
+    }
+    defer client.Disconnect(context.Background())
+
+    // Subscribe to a topic
+    client.Subscribe(context.Background(), "sensors/+/temperature", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+        fmt.Printf("Topic: %s, Payload: %s\n", msg.Topic, string(msg.Payload))
+    })
+
+    // Publish a message
+    token := client.Publish(context.Background(), "sensors/living-room/temperature", []byte("22.5"), mq.WithQoS(mq.AtLeastOnce))
+
+    // Wait for acknowledgment
+    if err := token.Wait(context.Background()); err != nil {
+        fmt.Printf("Publish failed: %v\n", err)
+    }
+}
+```
+
+> [!TIP]
+> **Pro-Tip: Avoiding Reconnection Races**
+> For subscriptions that should persist across connections, use `mq.WithSubscription(topic, handler)` in your `mq.Dial` options instead of calling `client.Subscribe` after connecting. This ensures the handler is registered *before* the connection is established, preventing a race condition where the server might deliver messages before your client has finished processing the subscription.
+
+## Performance
+
+The library is designed for high-concurrency environments:
+- **Throughput**: Up to **3x faster** than Paho v5 in high-concurrency scenarios, with peak rates exceeding **1.3M msg/s**.
+- **Radix Tree Routing**: O(K) topic matching for high-subscription environments.
+- **Non-blocking I/O**: Core state machine uses a non-blocking logic loop to maximize throughput.
+- **Efficiency**: **10x lower memory allocation** and significantly reduced GC overhead compared to alternative libraries.
+
+For a detailed comparative analysis, see the **[Performance Analysis Report](docs/performance_analysis.md)**.
+
+## Architecture
+
+The library is built around a non-blocking logic loop and a high-performance Radix Tree for message routing. For a deep dive into how we handle high-concurrency and prevent deadlocks, see the **[Internals & Concurrency Guide](docs/internals/CONCURRENCY.md)**.
+
+## Documentation
+- [Getting Started](docs/getting_started.md)
+- [Examples Index](examples/README.md)
+- [Client Configuration Best Practices](docs/client_configuration_best_practices.md)
+- [Auth Patterns](docs/auth.md)
+- [Design Patterns](docs/patterns.md)
+- [Observability & Metrics](docs/observability.md)
+- [Interceptors](docs/interceptors.md)
+- [Persistence](docs/persistence.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Performance Analysis](docs/performance_analysis.md)
+- [MQTT 5.0 Compliance](docs/mqtt_5.0_compliance.md)
+- [MQTT 3.1.1 Compliance](docs/mqtt_3.1.1_compliance.md)
+
+## License
+This software is under the MIT License.
+See [LICENSE](LICENSE) file for details.

@@ -1,0 +1,804 @@
+package mq
+
+import (
+	"context"
+	"crypto/tls"
+	"io"
+	"log/slog"
+	"maps"
+	"net"
+	"time"
+)
+
+// ContextDialer is an interface for custom network dialing logic.
+// It matches the signature of net.Dialer.DialContext.
+type ContextDialer interface {
+	DialContext(ctx context.Context, network, addr string) (net.Conn, error)
+}
+
+// clientOptions holds configuration for the MQTT client.
+type clientOptions struct {
+	orderedHandlers bool
+	// MQTT server address (e.g., "tcp://localhost:1883")
+	Server string
+
+	// Client identifier
+	ClientID string
+
+	// Username for authentication (optional)
+	Username string
+
+	// Password for authentication (optional)
+	Password string
+
+	// Keep alive interval
+	KeepAlive time.Duration
+
+	// Clean session flag
+	CleanSession bool
+
+	// Auto-reconnect on connection loss
+	AutoReconnect bool
+
+	// Connection timeout
+	ConnectTimeout time.Duration
+
+	// WriteTimeout is the network write timeout for socket operations.
+	// Default is 30s. Set to 0 to disable write deadlines.
+	WriteTimeout time.Duration
+
+	// TLS configuration (optional)
+	TLSConfig *tls.Config
+
+	// Logger for client events (optional, defaults to discarding logs)
+	Logger *slog.Logger
+
+	// Limits (0 = use MQTT spec defaults)
+	MaxTopicLength    int // Maximum topic length (default: 1024)
+	MaxPayloadSize    int // Maximum outgoing payload size (default: 1MB)
+	MaxIncomingPacket int // Maximum incoming packet size (default: 1MB)
+
+	// MaxHandlerConcurrency limits the number of message handler goroutines
+	// that can run simultaneously.
+	// Default is 100. Set to 0 for unlimited (not recommended for production).
+	MaxHandlerConcurrency int
+
+	// HandlerTimeout is the maximum time a message handler is allowed to run.
+	// 0 = no timeout (default).
+	HandlerTimeout time.Duration
+
+	// MaxAuthExchanges limits the number of AUTH packet exchanges per connection.
+	// Default is 10.
+	MaxAuthExchanges uint16
+
+	// Will message (optional)
+	will *willMessage
+
+	// Lifecycle hooks (optional)
+	OnConnect        func(*Client)
+	OnConnectionLost func(*Client, error)
+	OnServerRedirect func(serverURI string) // MQTT v5.0: Called when server provides redirection reference
+
+	// Initial subscriptions (optional)
+	InitialSubscriptions map[string]subscriptionEntry
+
+	// Protocol Version (4 = v3.1.1, 5 = v5.0)
+	ProtocolVersion uint8
+
+	// AutoProtocolVersion enables automatic protocol version negotiation.
+	// If true, the client will first try v5.0 and fall back to v3.1.1 if refused.
+	AutoProtocolVersion bool
+
+	// MQTT v5.0 request flags
+	RequestProblemInformation  bool
+	RequestResponseInformation bool
+
+	// MQTT v5.0 topic alias maximum (client → server)
+	// Maximum number of topic aliases the client will use when publishing.
+	// 0 = disabled (default). Server may override to a lower value.
+	TopicAliasMaximum uint16
+
+	// MQTT v5.0 receive maximum (client side flow control)
+	// Maximum number of QoS 1 and QoS 2 publications the client is willing to process concurrently.
+	// 0 = 65535 (default)
+	ReceiveMaximum       uint16
+	ReceiveMaximumPolicy LimitPolicy
+
+	// MQTT v5.0 session expiry interval
+	// How long the server should maintain session state after disconnect (in seconds).
+	// Only used if SessionExpirySet is true.
+	SessionExpiryInterval uint32
+	SessionExpirySet      bool // Track if explicitly set vs default
+
+	// MQTT v5.0 User Properties for CONNECT packet
+	ConnectUserProperties map[string]string
+
+	// Default publish handler (optional)
+	// Called when a PUBLISH packet doesn't match any registered subscription.
+	DefaultPublishHandler MessageHandler
+
+	// Custom dialer (optional)
+	// If set, this is used to establish the connection instead of net.Dialer.
+	Dialer ContextDialer
+
+	// Session store for persistence (optional)
+	// If set, session state will be persisted across process restarts.
+	SessionStore SessionStore
+
+	// Authenticator for enhanced authentication (optional, MQTT v5.0 only)
+	// If set, enables challenge/response authentication via AUTH packet flow.
+	Authenticator Authenticator
+
+	// Buffer sizes for internal packet processing.
+
+	// OutgoingQueueSize is the capacity of the outgoing packet channel.
+	// Larger sizes allow for bigger bursts of messages but increase memory usage.
+	OutgoingQueueSize int
+
+	// IncomingQueueSize is the capacity of the incoming packet channel.
+	IncomingQueueSize int
+
+	// QoS0Policy determines how the client handles QoS 0 messages when the
+	// OutgoingQueueSize is reached.
+	QoS0Policy QoS0LimitPolicy
+
+	// Interceptors for message handling and publishing.
+	HandlerInterceptors []HandlerInterceptor
+	PublishInterceptors []PublishInterceptor
+
+	// ReconnectBackoff is the initial interval to wait before reconnecting.
+	// Default is 1 second.
+	ReconnectBackoff time.Duration
+
+	// MaxReconnectBackoff is the maximum interval to wait before reconnecting.
+	// Default is 2 minutes.
+	MaxReconnectBackoff time.Duration
+
+	// EnableJitter enables Full Jitter on reconnection backoff intervals.
+	// Default is true.
+	EnableJitter bool
+
+	// MinStableConnectionDuration is the minimum duration a connection must
+	// remain alive to be considered stable. If a connection is severed before
+	// this threshold has elapsed, it is treated as a failed attempt for backoff
+	// purposes, escalating reconnection backoff to prevent tight reconnect loops.
+	// Default is 5 seconds (or max(2 * ReconnectBackoff, 2s) if unset/zero).
+	MinStableConnectionDuration time.Duration
+}
+
+// LogValue implements slog.LogValuer to mask sensitive information.
+func (o *clientOptions) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("server", o.Server),
+		slog.String("client_id", o.ClientID),
+		slog.String("username", o.Username),
+		slog.String("password", "***"),
+		slog.Duration("keep_alive", o.KeepAlive),
+		slog.Bool("clean_session", o.CleanSession),
+		slog.Bool("auto_reconnect", o.AutoReconnect),
+		slog.Int("protocol", int(o.ProtocolVersion)),
+	)
+}
+
+const (
+	// ProtocolV311 is MQTT version 3.1.1
+	ProtocolV311 uint8 = 4
+	// ProtocolV50 is MQTT version 5.0 (default)
+	ProtocolV50 uint8 = 5
+)
+
+// Option is a functional option for configuring the client.
+type Option func(*clientOptions)
+
+// WithClientID sets the client identifier.
+//
+// The client ID uniquely identifies this client to the MQTT server.
+//
+// Empty client ID behavior (MQTT v3.1.1 spec):
+//   - With CleanSession=true: Server will auto-generate a unique ID
+//   - With CleanSession=false: Server will reject the connection (identifier rejected)
+//
+// For persistent sessions (CleanSession=false), you MUST provide a non-empty client ID.
+func WithClientID(id string) Option {
+	return func(o *clientOptions) {
+		o.ClientID = id
+	}
+}
+
+// WithKeepAlive sets the MQTT keep alive interval (default: 60s).
+func WithKeepAlive(duration time.Duration) Option {
+	return func(o *clientOptions) {
+		o.KeepAlive = duration
+	}
+}
+
+// WithAutoReconnect enables or disables automatic reconnection (default: true).
+func WithAutoReconnect(enable bool) Option {
+	return func(o *clientOptions) {
+		o.AutoReconnect = enable
+	}
+}
+
+// WithConnectTimeout sets the connection timeout (default: 30s).
+func WithConnectTimeout(duration time.Duration) Option {
+	return func(o *clientOptions) {
+		o.ConnectTimeout = duration
+	}
+}
+
+// WithWriteTimeout sets the network write timeout for socket operations (default: 30s).
+// Setting it to 0 disables write deadlines. To keep writes cheap the deadline is
+// only refreshed once half of it has elapsed, so a stalled write is detected
+// after between duration/2 and duration.
+func WithWriteTimeout(duration time.Duration) Option {
+	return func(o *clientOptions) {
+		o.WriteTimeout = duration
+	}
+}
+
+// WithReconnectBackoff configures automatic reconnection backoff parameters:
+//   - initial: initial sleep interval before the first reconnect retry (default: 1s)
+//   - maximum: maximum ceiling for exponential backoff (default: 2m)
+//   - jitter: when true, applies randomized Full Jitter (0..backoff) to prevent thundering herd spikes
+//
+// Example:
+//
+//	client, _ := mq.Dial("tcp://localhost:1883", mq.WithReconnectBackoff(1*time.Second, 10*time.Second, true))
+func WithReconnectBackoff(initial, maximum time.Duration, jitter bool) Option {
+	return func(o *clientOptions) {
+		o.ReconnectBackoff = initial
+		o.MaxReconnectBackoff = maximum
+		o.EnableJitter = jitter
+	}
+}
+
+// WithMinStableConnectionDuration configures the minimum duration a connection must
+// remain active to be considered stable.
+//
+// When a connection drops before this duration has elapsed, the reconnection loop treats
+// the connection as failed and exponentially increases the backoff (up to MaxReconnectBackoff)
+// rather than immediately resetting back to ReconnectBackoff. This prevents tight reconnection
+// loops when connections are repeatedly severed shortly after CONNACK (e.g., duplicate client IDs,
+// broker kick, or network flapping).
+//
+// Default is 5 seconds (or max(2 * ReconnectBackoff, 2s) if unset/zero).
+// Pass a negative duration (e.g., -1) to disable this behavior and reset backoff immediately on CONNACK.
+func WithMinStableConnectionDuration(duration time.Duration) Option {
+	return func(o *clientOptions) {
+		o.MinStableConnectionDuration = duration
+	}
+}
+
+// WithProtocolVersion sets the MQTT protocol version to use.
+// Use ProtocolV50 (default) for MQTT v5.0 or ProtocolV311 for MQTT v3.1.1.
+//
+// Example for v3.1.1 server:
+//
+//	client, _ := mq.Dial("tcp://localhost:1883", mq.WithProtocolVersion(mq.ProtocolV311))
+func WithProtocolVersion(version uint8) Option {
+	return func(o *clientOptions) {
+		o.ProtocolVersion = version
+	}
+}
+
+// WithAutoProtocolVersion enables or disables automatic protocol version negotiation.
+//
+// When enabled (default: true), the client will first attempt to connect using
+// MQTT v5.0. If the server rejects the connection with an "Unacceptable
+// Protocol Version" error (0x01), the client will automatically fall back
+// to MQTT v3.1.1 and try again.
+//
+// This is useful when connecting to unknown servers or during migrations
+// where some brokers might not yet support MQTT v5.0.
+//
+// Note: This only applies to the initial connection. Once a version is
+// negotiated, it is used for all subsequent automatic reconnections.
+func WithAutoProtocolVersion(auto bool) Option {
+	return func(o *clientOptions) {
+		o.AutoProtocolVersion = auto
+	}
+}
+
+// WithRequestProblemInformation requests that the server include detailed
+// problem information (ReasonString and UserProperties) in error responses.
+//
+// Only applicable for MQTT v5.0 connections. When set to true, the server
+// should include diagnostic information in CONNACK, PUBACK, PUBREC, PUBREL,
+// PUBCOMP, SUBACK, UNSUBACK, and DISCONNECT packets when errors occur.
+//
+// This is useful for debugging and understanding server behavior, but may
+// increase bandwidth usage. Most servers send problem information by default.
+//
+// This option is ignored when using MQTT v3.1.1.
+//
+// Example:
+//
+//	client, _ := mq.Dial("tcp://localhost:1883",
+//	    mq.WithProtocolVersion(mq.ProtocolV50),
+//	    mq.WithRequestProblemInformation(true))
+func WithRequestProblemInformation(request bool) Option {
+	return func(o *clientOptions) {
+		o.RequestProblemInformation = request
+	}
+}
+
+// WithRequestResponseInformation requests that the server provide response
+// information in the CONNACK packet.
+//
+// Only applicable for MQTT v5.0 connections. When set to true, the server
+// may include a ResponseInformation string that the client can use as the
+// basis for creating response topics in request/response patterns.
+//
+// This is useful in multi-tenant or managed cloud environments where the
+// server controls topic naming conventions.
+//
+// This option is ignored when using MQTT v3.1.1.
+//
+// Example:
+//
+//	client, _ := mq.Dial("tcp://localhost:1883",
+//	    mq.WithProtocolVersion(mq.ProtocolV50),
+//	    mq.WithRequestResponseInformation(true))
+//
+//	if respInfo := client.ResponseInformation(); respInfo != "" {
+//	    // Use server's suggested prefix
+//	    responseTopic := respInfo + "my-responses"
+//	}
+func WithRequestResponseInformation(request bool) Option {
+	return func(o *clientOptions) {
+		o.RequestResponseInformation = request
+	}
+}
+
+// WithTopicAliasMaximum sets the maximum number of topic aliases the client
+// will accept from the server when receiving PUBLISH messages.
+//
+// Only applicable for MQTT v5.0. This value is sent in the CONNECT packet
+// to tell the server how many aliases it can send to the client.
+//
+// The server will also send its own TopicAliasMaximum in CONNACK, which tells
+// the client how many aliases it can send to the server when publishing.
+// These are independent values - one for each direction.
+//
+// Topic aliases allow short numeric IDs to be used instead of full topic names,
+// reducing bandwidth usage for frequently published topics.
+//
+// Values:
+//   - 0: Topic aliases disabled (default)
+//   - 1-65535: Maximum number of aliases to accept from server
+//
+// This option is ignored when using MQTT v3.1.1.
+//
+// Example:
+//
+//	client, _ := mq.Dial("tcp://localhost:1883",
+//	    mq.WithProtocolVersion(mq.ProtocolV50),
+//	    mq.WithTopicAliasMaximum(100))  // Accept up to 100 aliases from server
+//
+//	// Publishing with alias (uses server's limit from CONNACK)
+//	client.Publish("sensors/building-a/floor-3/room-42/temperature", data,
+//	    mq.WithAlias())
+//
+//	// Receiving with alias (uses our declared limit of 100)
+//	client.Subscribe("sensors/#", mq.AtLeastOnce, func(c *mq.Client, msg mq.Message) {
+//	    // Topic is automatically resolved from alias
+//	    fmt.Printf("Topic: %s\n", msg.Topic)
+//	})
+func WithTopicAliasMaximum(limit uint16) Option {
+	return func(o *clientOptions) {
+		o.TopicAliasMaximum = limit
+	}
+}
+
+// LimitPolicy determines how the client enforces limits (like ReceiveMaximum).
+type LimitPolicy int
+
+const (
+	// LimitPolicyIgnore logs a warning once per connection but continues processing.
+	LimitPolicyIgnore LimitPolicy = iota
+
+	// LimitPolicyStrict sends a DISCONNECT with Reason Code 0x93 (Receive Maximum exceeded)
+	// when the limit is reached.
+	//
+	// Note: Auto-reconnect should be disabled or carefully managed when using this policy,
+	// as a misbehaving server could cause an infinite loop of connect -> overflow -> disconnect.
+	LimitPolicyStrict
+)
+
+// QoS0LimitPolicy determines how the client handles QoS 0 messages when the internal buffer is full.
+type QoS0LimitPolicy int
+
+const (
+	// QoS0LimitPolicyDrop drops the QoS 0 message immediately if the internal buffer is full.
+	// This prevents the caller from blocking and avoids goroutine leaks.
+	// The token's Dropped() method will return true.
+	QoS0LimitPolicyDrop QoS0LimitPolicy = iota
+
+	// QoS0LimitPolicyBlock blocks the caller until space is available in the internal buffer.
+	// Use this if reliability is more important than preventing temporary blocking.
+	// This is safe to use as it still respects client shutdown.
+	QoS0LimitPolicyBlock
+)
+
+// WithReceiveMaximum sets the maximum number of unacknowledged QoS 1 and QoS 2
+// messages the client is willing to process concurrently.
+//
+// Only applicable for MQTT v5.0. This value is sent in the CONNECT packet.
+// The default value is 65535 (maximum allowed by spec).
+//
+// This allows the client to limit the number of messages it has to manage
+// buffering for. If the client cannot process messages fast enough, it can
+// lower this value to apply backpressure to the server.
+//
+// The policy argument determines behavior when the limit is exceeded:
+//   - LimitPolicyIgnore (recommended): Log a warning once and continue processing.
+//     This protects the client from disconnecting due to server bugs, while still
+//     processing messages (potentially unbounded).
+//   - LimitPolicyStrict: Disconnect with Reason Code 0x93.
+//     Use this if strict flow control compliance is required.
+//
+// This option is ignored when using MQTT v3.1.1.
+func WithReceiveMaximum(limit uint16, policy LimitPolicy) Option {
+	return func(o *clientOptions) {
+		o.ReceiveMaximum = limit
+		o.ReceiveMaximumPolicy = policy
+	}
+}
+
+// WithConnectUserProperties sets the User Properties to be sent in the CONNECT packet.
+//
+// Only applicable for MQTT v5.0 connections. User Properties are key-value pairs
+// that allow the client to send custom metadata to the server during the connection
+// handshake.
+//
+// This option is ignored when using MQTT v3.1.1.
+//
+// Example:
+//
+//	client, _ := mq.Dial("tcp://localhost:1883",
+//	    mq.WithProtocolVersion(mq.ProtocolV50),
+//	    mq.WithConnectUserProperties(map[string]string{
+//	        "region": "us-east-1",
+//	        "app-version": "1.0.2",
+//	    }))
+func WithConnectUserProperties(props map[string]string) Option {
+	return func(o *clientOptions) {
+		if o.ConnectUserProperties == nil {
+			o.ConnectUserProperties = make(map[string]string)
+		}
+		maps.Copy(o.ConnectUserProperties, props)
+	}
+}
+
+// WithDefaultPublishHandler sets a fallback handler for incoming PUBLISH messages
+// that do not match any registered subscription.
+//
+// This is useful for:
+//   - Handling messages received during reconnection race conditions
+//   - Handling persistent subscriptions restored without a registered handler (orphans)
+//   - Debugging or logging unexpected messages
+//   - Implementing a catch-all strategy
+//
+// If not set (default), messages matching no subscription are silently dropped
+// (but still acknowledged to comply with the protocol).
+//
+// Example:
+//
+//	client, _ := mq.Dial(uri,
+//	    mq.WithDefaultPublishHandler(func(c *mq.Client, msg mq.Message) {
+//	        log.Printf("Unexpected message on %s: %s", msg.Topic, msg.Payload)
+//	    }),
+//	)
+func WithDefaultPublishHandler(handler MessageHandler) Option {
+	return func(o *clientOptions) {
+		o.DefaultPublishHandler = handler
+	}
+}
+
+// WithLogger sets a custom logger for the client.
+// If not provided, the client will use a logger that discards all output.
+// Use this to integrate with your application's logging system.
+//
+// Example:
+//
+//	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+//	    Level: slog.LevelDebug,
+//	}))
+//	client, _ := mq.Dial("tcp://localhost:1883", mq.WithLogger(logger))
+func WithLogger(logger *slog.Logger) Option {
+	return func(o *clientOptions) {
+		o.Logger = logger
+	}
+}
+
+// WithDialer sets a custom dialer for establishing the network connection.
+// This enables support for alternative transports like WebSockets, Unix sockets,
+// or proxying, without adding dependencies to the core library.
+//
+// If provided, the library will skip its standard scheme validation and
+// delegate the connection creation entirely to the dialer.
+//
+// The dialer's DialContext method receives:
+//   - ctx: The context provided to DialContext (or one created from WithConnectTimeout if using Dial)
+//   - network: The scheme from the server URL (e.g. "ws", "tcp", "unix")
+//   - addr: The original server string passed to Dial
+//
+// Example (WebSockets using nhooyr.io/websocket):
+//
+//	client, _ := mq.Dial("ws://server.example.com/mqtt",
+//	    mq.WithDialer(mq.DialFunc(func(ctx context.Context, network, addr string) (net.Conn, error) {
+//	        c, _, err := websocket.Dial(ctx, addr, &websocket.DialOptions{
+//	            Subprotocols: []string{"mqtt"}, // Crucial for MQTT over WebSockets
+//	        })
+//	        if err != nil {
+//	            return nil, err
+//	        }
+//	        return websocket.NetConn(ctx, c, websocket.MessageBinary), nil
+//	    })))
+func WithDialer(dialer ContextDialer) Option {
+	return func(o *clientOptions) {
+		o.Dialer = dialer
+	}
+}
+
+// DialFunc is a helper to convert a function to the ContextDialer interface.
+type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
+
+// DialContext implements ContextDialer.
+func (f DialFunc) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	return f(ctx, network, addr)
+}
+
+// WithOnConnect sets the handler to be called when the client connects.
+// This is called for the initial connection and every successful reconnection.
+//
+// The handler is invoked asynchronously in a separate goroutine. This allows
+// implementing complex setup logic (e.g., subscribing, publishing) without
+// blocking the connection process or logic loop.
+func WithOnConnect(onConnect func(*Client)) Option {
+	return func(o *clientOptions) {
+		o.OnConnect = onConnect
+	}
+}
+
+// WithOnConnectionLost sets the handler to be called when the connection is lost.
+// The error parameter provides the reason for disconnection.
+//
+// The handler is invoked asynchronously in a separate goroutine to ensure
+// it does not block internal cleanup or reconnection attempts.
+func WithOnConnectionLost(onConnectionLost func(*Client, error)) Option {
+	return func(o *clientOptions) {
+		o.OnConnectionLost = onConnectionLost
+	}
+}
+
+// WithOnServerRedirect sets the handler to be called when the server provides
+// a redirection reference (MQTT v5.0 only).
+//
+// The server can send a ServerReference in the CONNACK or DISCONNECT packet to
+// suggest that the client connect to a different server. This is used for:
+//   - Load balancing: Distribute clients across multiple servers
+//   - Maintenance: Move clients before server shutdown
+//   - Geographic routing: Direct clients to nearest server
+//   - Failover: Redirect to backup server
+//
+// The handler receives the server URI as provided by the server. The client
+// does NOT automatically redirect - the handler should decide whether to accept
+// the redirect and manually reconnect if desired.
+//
+// The handler is invoked asynchronously in a separate goroutine to prevent
+// blocking the processing of the CONNACK packet.
+//
+// The server reference is also available via the ServerReference() method for
+// polling/checking later.
+//
+// This option is only relevant for MQTT v5.0 connections. For v3.1.1, the
+// callback will never be invoked.
+//
+// Example:
+//
+//	client, err := mq.Dial("tcp://server1.example.com:1883",
+//	    mq.WithOnServerRedirect(func(newServer string) {
+//	        log.Printf("Server suggests redirect to: %s", newServer)
+//	        // Application decides whether to reconnect
+//	    }))
+func WithOnServerRedirect(onServerRedirect func(serverURI string)) Option {
+	return func(o *clientOptions) {
+		o.OnServerRedirect = onServerRedirect
+	}
+}
+
+// DisconnectOptions holds configuration for a disconnection.
+type DisconnectOptions struct {
+	ReasonCode ReasonCode
+	Properties *Properties
+}
+
+// DisconnectOption is a functional option for configuring a disconnection.
+type DisconnectOption func(*DisconnectOptions)
+
+// WithReason sets the reason code for the DISCONNECT packet (MQTT v5.0).
+// Common codes include:
+//   - 0x00: Normal Disconnect (default)
+//   - 0x04: Disconnect with Will Message
+//
+// This option is ignored when using MQTT v3.1.1.
+func WithReason(code ReasonCode) DisconnectOption {
+	return func(o *DisconnectOptions) {
+		o.ReasonCode = code
+	}
+}
+
+// WithDisconnectProperties sets the MQTT v5.0 properties for the DISCONNECT packet.
+//
+// This can be used to set:
+//   - Session Expiry Interval (to update expiry on disconnect)
+//   - Reason String (diagnostic information)
+//   - User Properties (custom metadata)
+//
+// This option is ignored when using MQTT v3.1.1.
+func WithDisconnectProperties(props *Properties) DisconnectOption {
+	return func(o *DisconnectOptions) {
+		o.Properties = props
+	}
+}
+
+// WithDisconnectSessionExpiry sets the Session Expiry Interval (in seconds) for the DISCONNECT packet (MQTT v5.0).
+//
+// This option allows a client to update or expire its session state upon disconnection.
+// For example, setting 0 ensures the session expires immediately on disconnect.
+//
+// This option is ignored when using MQTT v3.1.1.
+func WithDisconnectSessionExpiry(interval uint32) DisconnectOption {
+	return func(o *DisconnectOptions) {
+		if o.Properties == nil {
+			o.Properties = &Properties{}
+		}
+		o.Properties.SessionExpiryInterval = &interval
+	}
+}
+
+// WithOutgoingQueueSize sets the size of the internal outgoing packet buffer (default: 1000).
+func WithOutgoingQueueSize(size int) Option {
+	return func(o *clientOptions) {
+		if size > 0 {
+			o.OutgoingQueueSize = size
+		}
+	}
+}
+
+// WithIncomingQueueSize sets the size of the internal incoming packet buffer (default: 100).
+func WithIncomingQueueSize(size int) Option {
+	return func(o *clientOptions) {
+		if size > 0 {
+			o.IncomingQueueSize = size
+		}
+	}
+}
+
+// WithQoS0LimitPolicy sets the policy for handling QoS 0 messages when the buffer is full.
+//
+// The default policy is QoS0LimitPolicyDrop, which ensures the client remains non-blocking
+// and responsive even under extreme network congestion.
+func WithQoS0LimitPolicy(policy QoS0LimitPolicy) Option {
+	return func(o *clientOptions) {
+		o.QoS0Policy = policy
+	}
+}
+
+// WithHandlerInterceptor adds an interceptor to the incoming message handler chain.
+// Interceptors are called in the order they are added.
+//
+// Example (Logging):
+//
+//	client, _ := mq.Dial(uri,
+//	    mq.WithHandlerInterceptor(func(next mq.MessageHandler) mq.MessageHandler {
+//	        return func(c *mq.Client, m mq.Message) {
+//	            log.Printf("Received message on topic %s", m.Topic)
+//	            next(c, m)
+//	        }
+//	    }),
+//	)
+func WithHandlerInterceptor(interceptor HandlerInterceptor) Option {
+	return func(o *clientOptions) {
+		o.HandlerInterceptors = append(o.HandlerInterceptors, interceptor)
+	}
+}
+
+// WithPublishInterceptor adds an interceptor to the outbound publish chain.
+// Interceptors are called in the order they are added.
+//
+// Example (Tracing):
+//
+//	client, _ := mq.Dial(uri,
+//	    mq.WithPublishInterceptor(func(next mq.PublishFunc) mq.PublishFunc {
+//	        return func(topic string, payload []byte, opts ...mq.PublishOption) mq.Token {
+//	            // Inject tracing headers or log the publish
+//	            return next(topic, payload, opts...)
+//	        }
+//	    }),
+//	)
+func WithPublishInterceptor(interceptor PublishInterceptor) Option {
+	return func(o *clientOptions) {
+		o.PublishInterceptors = append(o.PublishInterceptors, interceptor)
+	}
+}
+
+// WithTLS sets the TLS configuration for secure connections.
+// Pass nil for default TLS settings, or provide a custom *tls.Config.
+// The server URL should use "tls://", "ssl://", or "mqtts://" scheme, or this option
+// will enable TLS for "tcp://" URLs as well.
+func WithTLS(config *tls.Config) Option {
+	return func(o *clientOptions) {
+		o.TLSConfig = config
+	}
+}
+
+// WithCredentials sets the username and password for authentication.
+//
+// Per [MQTT-3.1.2-22], a non-empty password requires a non-empty username;
+// attempting to connect with a password but an empty username will return an error.
+func WithCredentials(username, password string) Option {
+	return func(o *clientOptions) {
+		o.Username = username
+		o.Password = password
+	}
+}
+
+// WithAuthenticator sets the authenticator for enhanced authentication (MQTT v5.0).
+//
+// Enhanced authentication allows challenge/response authentication mechanisms
+// such as SCRAM, OAuth, Kerberos, or custom methods. The authenticator handles
+// the authentication exchange via the AUTH packet flow.
+//
+// If set, the client will:
+//  1. Send AuthenticationMethod + InitialData in CONNECT
+//  2. Handle AUTH challenges from the server via HandleChallenge
+//  3. Complete authentication when CONNACK is received
+//
+// This option is only relevant for MQTT v5.0. For v3.1.1, use WithCredentials
+// for simple username/password authentication.
+//
+// Example:
+//
+//	auth := &MyScramAuthenticator{username: "user", password: "pass"}
+//	client, err := mq.Dial("tcp://localhost:1883",
+//	    mq.WithProtocolVersion(mq.ProtocolV50),
+//	    mq.WithAuthenticator(auth))
+func WithAuthenticator(auth Authenticator) Option {
+	return func(o *clientOptions) {
+		o.Authenticator = auth
+	}
+}
+
+// defaultOptions returns the default client options.
+func defaultOptions(server string) *clientOptions {
+	return &clientOptions{
+		Server:              server,
+		ClientID:            "",
+		KeepAlive:           60 * time.Second,
+		CleanSession:        true,
+		ProtocolVersion:     ProtocolV50,
+		AutoProtocolVersion: true,
+		AutoReconnect:       true,
+		ConnectTimeout:      30 * time.Second,
+		WriteTimeout:        30 * time.Second,
+		OutgoingQueueSize:   1000,
+		IncomingQueueSize:   100,
+		QoS0Policy:          QoS0LimitPolicyDrop,
+		Logger:              slog.New(slog.NewTextHandler(io.Discard, nil)),
+
+		// Use MQTT spec defaults (0 = use defaults in validation functions)
+		MaxTopicLength:    0,
+		MaxPayloadSize:    0,
+		MaxIncomingPacket: 0,
+
+		MaxHandlerConcurrency: 100,
+		MaxAuthExchanges:      10,
+
+		ReconnectBackoff:            1 * time.Second,
+		MaxReconnectBackoff:         2 * time.Minute,
+		EnableJitter:                true,
+		MinStableConnectionDuration: 5 * time.Second,
+	}
+}

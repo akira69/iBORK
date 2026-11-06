@@ -1,0 +1,320 @@
+package mq
+
+import (
+	"sync"
+)
+
+// SessionStore handles persistence of session state across process restarts.
+// This enables session state to survive client restarts, crashes, or reboots.
+//
+// Note: State is only loaded from the store when the client process starts.
+// During normal network reconnections (when in-memory state is still available),
+// the store is not consulted - the in-memory state is used directly.
+//
+// What Gets Persisted:
+//
+//   - Pending QoS 1 and QoS 2 publishes (not yet acknowledged by server)
+//   - Active subscriptions (to restore on reconnect)
+//   - Received QoS 2 packet IDs (to prevent duplicate delivery)
+//
+// What Does NOT Get Persisted:
+//
+//   - QoS 0 publishes (fire-and-forget, no delivery guarantee)
+//   - Messages already acknowledged (PUBACK/PUBCOMP received)
+//   - Connection state (handled by MQTT protocol on reconnect)
+//
+// Threading Model:
+//
+// All methods are called from a single goroutine (the client's logic loop).
+// Implementations do NOT need to be thread-safe for concurrent calls from mq.
+//
+// Async Implementations:
+//
+// Save/Delete methods MAY return immediately and perform I/O asynchronously
+// in a background goroutine. This allows implementations to batch writes or
+// use async I/O without blocking the client's logic loop.
+//
+// However, Load methods MUST complete synchronously and return the actual
+// data, as they are called during connection setup when the data is needed
+// immediately.
+//
+// Error Handling:
+//
+//   - Save/Delete errors are logged but do not fail the operation. The in-memory
+//     state is authoritative. Implementations should handle errors gracefully
+//     (e.g., retry, log, alert).
+//   - Load errors will cause connection failure, as session state cannot be restored.
+type SessionStore interface {
+	// SavePendingPublish stores an outgoing publish that hasn't been acknowledged.
+	// Called when a QoS 1/2 publish is sent.
+	// MAY return immediately and persist asynchronously.
+	SavePendingPublish(packetID uint16, pub *PersistedPublish) error
+
+	// DeletePendingPublish removes a publish after it's been acknowledged.
+	// Called when PUBACK (QoS 1) or PUBCOMP (QoS 2) is received.
+	// MAY return immediately and delete asynchronously.
+	DeletePendingPublish(packetID uint16) error
+
+	// LoadPendingPublishes retrieves all pending publishes on reconnect.
+	// Called once during connection establishment.
+	// MUST complete synchronously and return actual data.
+	LoadPendingPublishes() (map[uint16]*PersistedPublish, error)
+
+	// SaveSubscription stores an active subscription.
+	// Called when SUBACK is received.
+	// MAY return immediately and persist asynchronously.
+	SaveSubscription(topic string, sub *PersistedSubscription) error
+
+	// DeleteSubscription removes a subscription.
+	// Called when UNSUBACK is received.
+	// MAY return immediately and delete asynchronously.
+	DeleteSubscription(topic string) error
+
+	// LoadSubscriptions retrieves all subscriptions on reconnect.
+	// Called once during connection establishment.
+	//
+	// Note: Only topic filters and options are restored. The associated MessageHandlers
+	// are NOT persisted.
+	// - Callers should use mq.WithSubscription to re-associate handlers with these topics.
+	// - If no handler is found, messages will fallback to the DefaultPublishHandler if set.
+	//
+	// MUST complete synchronously and return actual data.
+	LoadSubscriptions() (map[string]*PersistedSubscription, error)
+
+	// SaveReceivedQoS2 marks a QoS 2 packet ID as received (prevent duplicates).
+	// Called when QoS 2 PUBLISH is received.
+	// MAY return immediately and persist asynchronously.
+	SaveReceivedQoS2(packetID uint16) error
+
+	// DeleteReceivedQoS2 removes a QoS 2 packet ID after PUBCOMP sent.
+	// Called when QoS 2 flow completes.
+	// MAY return immediately and delete asynchronously.
+	DeleteReceivedQoS2(packetID uint16) error
+
+	// LoadReceivedQoS2 retrieves all received QoS 2 packet IDs.
+	// Called once during connection establishment.
+	// MUST complete synchronously and return actual data.
+	LoadReceivedQoS2() (map[uint16]struct{}, error)
+
+	// ClearReceivedQoS2 removes all received QoS 2 packet IDs.
+	// Called when SessionPresent=false (server lost our session).
+	ClearReceivedQoS2() error
+
+	// Clear removes all session state.
+	// Called when CleanSession=true or session expires.
+	Clear() error
+}
+
+// AsyncStore wraps a SessionStore and performs Save and Delete operations
+// asynchronously in a background goroutine.
+//
+// Load methods remain synchronous and will wait for any pending writes
+// to complete if necessary (though in practice Load is only called at startup).
+type AsyncStore struct {
+	store SessionStore
+	mu    sync.Mutex
+	cond  *sync.Cond
+	queue []func() error
+	stop  bool
+	done  chan struct{} // closed when run has finished the queue after Close
+	err   error         // first error from store; written by run before done
+}
+
+// NewAsyncStore creates a new AsyncStore wrapping the provided store.
+// bufferSize determines the initial capacity of the internal unbounded queue.
+func NewAsyncStore(store SessionStore, bufferSize int) *AsyncStore {
+	as := &AsyncStore{
+		store: store,
+		queue: make([]func() error, 0, bufferSize),
+		done:  make(chan struct{}),
+	}
+	as.cond = sync.NewCond(&as.mu)
+
+	go as.run()
+	return as
+}
+
+func (as *AsyncStore) run() {
+	for {
+		as.mu.Lock()
+		for len(as.queue) == 0 && !as.stop {
+			as.cond.Wait()
+		}
+		if len(as.queue) == 0 && as.stop {
+			as.mu.Unlock()
+			close(as.done)
+			return
+		}
+		op := as.queue[0]
+		as.queue[0] = nil // Avoid retaining closure and captured payload in backing array
+		as.queue = as.queue[1:]
+		as.mu.Unlock()
+
+		if err := op(); err != nil && as.err == nil {
+			as.err = err
+		}
+	}
+}
+
+// enqueue adds an operation to the queue without blocking.
+func (as *AsyncStore) enqueue(op func() error) {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	if as.stop {
+		return
+	}
+	as.queue = append(as.queue, op)
+	as.cond.Signal()
+}
+
+// Close stops the background worker after it has run every queued operation,
+// so nothing is lost when the program exits right after Disconnect. It returns
+// the first error the wrapped store returned from an asynchronous operation.
+// Operations enqueued after Close are dropped.
+func (as *AsyncStore) Close() error {
+	as.mu.Lock()
+	as.stop = true
+	as.cond.Signal()
+	as.mu.Unlock()
+	<-as.done
+	return as.err
+}
+
+// flush blocks until all currently enqueued operations have completed.
+func (as *AsyncStore) flush() {
+	as.mu.Lock()
+	if as.stop {
+		as.mu.Unlock()
+		return
+	}
+	ch := make(chan struct{})
+	as.queue = append(as.queue, func() error {
+		close(ch)
+		return nil
+	})
+	as.cond.Signal()
+	as.mu.Unlock()
+	<-ch
+}
+
+// SavePendingPublish implements SessionStore.
+func (as *AsyncStore) SavePendingPublish(packetID uint16, pub *PersistedPublish) error {
+	as.enqueue(func() error {
+		return as.store.SavePendingPublish(packetID, pub)
+	})
+	return nil
+}
+
+// DeletePendingPublish implements SessionStore.
+func (as *AsyncStore) DeletePendingPublish(packetID uint16) error {
+	as.enqueue(func() error {
+		return as.store.DeletePendingPublish(packetID)
+	})
+	return nil
+}
+
+// LoadPendingPublishes implements SessionStore.
+func (as *AsyncStore) LoadPendingPublishes() (map[uint16]*PersistedPublish, error) {
+	as.flush()
+	return as.store.LoadPendingPublishes()
+}
+
+// SaveSubscription implements SessionStore.
+func (as *AsyncStore) SaveSubscription(topic string, sub *PersistedSubscription) error {
+	as.enqueue(func() error {
+		return as.store.SaveSubscription(topic, sub)
+	})
+	return nil
+}
+
+// DeleteSubscription implements SessionStore.
+func (as *AsyncStore) DeleteSubscription(topic string) error {
+	as.enqueue(func() error {
+		return as.store.DeleteSubscription(topic)
+	})
+	return nil
+}
+
+// LoadSubscriptions implements SessionStore.
+func (as *AsyncStore) LoadSubscriptions() (map[string]*PersistedSubscription, error) {
+	as.flush()
+	return as.store.LoadSubscriptions()
+}
+
+// SaveReceivedQoS2 implements SessionStore.
+func (as *AsyncStore) SaveReceivedQoS2(packetID uint16) error {
+	as.enqueue(func() error {
+		return as.store.SaveReceivedQoS2(packetID)
+	})
+	return nil
+}
+
+// DeleteReceivedQoS2 implements SessionStore.
+func (as *AsyncStore) DeleteReceivedQoS2(packetID uint16) error {
+	as.enqueue(func() error {
+		return as.store.DeleteReceivedQoS2(packetID)
+	})
+	return nil
+}
+
+// LoadReceivedQoS2 implements SessionStore.
+func (as *AsyncStore) LoadReceivedQoS2() (map[uint16]struct{}, error) {
+	as.flush()
+	return as.store.LoadReceivedQoS2()
+}
+
+// ClearReceivedQoS2 implements SessionStore.
+func (as *AsyncStore) ClearReceivedQoS2() error {
+	as.enqueue(func() error {
+		return as.store.ClearReceivedQoS2()
+	})
+	return nil
+}
+
+// Clear implements SessionStore.
+func (as *AsyncStore) Clear() error {
+	// Clear is usually called on disconnect or when session expires.
+	// We do it synchronously to ensure state is gone.
+	as.flush()
+	return as.store.Clear()
+}
+
+// PersistedPublish represents a publish for persistence.
+// This is a simplified representation containing only the data needed
+// to restore a pending publish after reconnection.
+type PersistedPublish struct {
+	Topic      string
+	Payload    []byte
+	QoS        uint8
+	Retain     bool
+	Properties *PublishProperties
+}
+
+// PersistedSubscription represents a subscription for persistence.
+// This contains the data needed to restore a subscription after reconnection.
+type PersistedSubscription struct {
+	QoS     uint8
+	Options *PersistedSubscriptionOptions
+}
+
+// PublishProperties represents MQTT v5.0 publish properties for persistence.
+type PublishProperties struct {
+	PayloadFormat          *uint8
+	MessageExpiry          *uint32
+	TopicAlias             *uint16
+	ResponseTopic          string
+	CorrelationData        []byte
+	UserProperties         map[string]string
+	UserPropertyList       []UserProperty // Wire order with duplicate keys; preferred over UserProperties when set.
+	SubscriptionIdentifier *uint32
+	ContentType            string
+}
+
+// PersistedSubscriptionOptions represents MQTT v5.0 subscription options for persistence.
+type PersistedSubscriptionOptions struct {
+	NoLocal           bool
+	RetainAsPublished bool
+	RetainHandling    uint8
+	SubscriptionID    *uint32
+	UserProperties    map[string]string
+}

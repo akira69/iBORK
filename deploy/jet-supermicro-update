@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+set -euo pipefail
+APP_DIR=/opt/jet-supermicro
+LOCK_FILE=/run/lock/jet-supermicro-update.lock
+CONFIG_FILE=/etc/jet-supermicro/config.env
+REPO=akira69/iBORK
+ASSETS=(jet-supermicro-linux-amd64 jet-supermicro-update jet-supermicro-login.sh jet-supermicro.service)
+
+valid_tag() { [[ $1 =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; }
+
+download_release() {
+  local tag=$1 dir=$2 name
+  for name in "${ASSETS[@]}" SHA256SUMS; do
+    curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 120 \
+      --output "$dir/$name" "https://github.com/$REPO/releases/download/$tag/$name" || return 1
+  done
+}
+
+verify_release() (
+  cd "$1"
+  [[ -f SHA256SUMS && ! -L SHA256SUMS && $(wc -l < SHA256SUMS) == "${#ASSETS[@]}" ]] || return 1
+  local name
+  for name in "${ASSETS[@]}"; do
+    [[ -f $name && ! -L $name ]] || return 1
+    [[ $(awk -v name="$name" '$2 == name && NF == 2 {print $1}' SHA256SUMS) =~ ^[a-f0-9]{64}$ ]] || return 1
+  done
+  sha256sum --check --status SHA256SUMS
+)
+
+healthy() {
+  local attempt code origin
+  origin=$(sed -n 's/^APP_ORIGIN=//p' "$CONFIG_FILE") || return 1
+  [[ $origin == https://* || $origin == http://* ]] || return 1
+  for ((attempt=0; attempt<15; attempt++)); do
+    code=$(curl --silent --output /dev/null --write-out '%{http_code}' --header "Host: ${origin#*://}" --connect-timeout 2 --max-time 3 http://127.0.0.1:8080/api/session) || code=000
+    if [[ $code == 401 ]] && systemctl is-active --quiet jet-supermicro; then return 0; fi
+    sleep 1
+  done
+  return 1
+}
+
+switch_to() {
+  ln -sfnT "$1" "$APP_DIR/.current-next"
+  mv -Tf "$APP_DIR/.current-next" "$APP_DIR/current"
+}
+
+main() (
+  set -euo pipefail
+  [[ $EUID == 0 ]] || { echo 'Run as root.' >&2; exit 1; }
+  [[ $# -le 1 ]] || { echo 'Usage: update [--check|--rollback|vX.Y.Z]' >&2; exit 1; }
+  exec 9>"$LOCK_FILE"
+  flock -n 9 || { echo 'Another update is running.' >&2; exit 1; }
+  local old target stage='' changed=0 mode=${1:-} tag code
+  old=$(readlink "$APP_DIR/current")
+  if [[ $old != releases/* ]] || ! valid_tag "${old#releases/}"; then echo 'Installed version link is invalid.' >&2; exit 1; fi
+  # Invoked by the EXIT trap while main's locals remain in scope.
+  # shellcheck disable=SC2317
+  cleanup() {
+    code=$?
+    trap - EXIT
+    if [[ $changed == 1 ]]; then
+      echo 'Update failed; restoring the previous version.' >&2
+      switch_to "$old"
+      systemctl daemon-reload
+      if systemctl restart jet-supermicro && healthy; then
+        echo "Restored ${old#releases/}." >&2
+      else
+        echo 'Previous version did not recover; inspect journalctl -u jet-supermicro.' >&2
+      fi
+    fi
+    [[ -z $stage ]] || rm -rf -- "$stage"
+    exit "$code"
+  }
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  if [[ $mode == --rollback ]]; then
+    target=$(readlink "$APP_DIR/previous")
+    if [[ $target != releases/* ]] || ! valid_tag "${target#releases/}"; then echo 'No valid previous version.' >&2; exit 1; fi
+    verify_release "$APP_DIR/$target" || { echo 'Previous version failed checksum verification.' >&2; exit 1; }
+  else
+    [[ -z $mode || $mode == --check ]] || valid_tag "$mode" || { echo 'Invalid release tag.' >&2; exit 1; }
+    if [[ -z $mode || $mode == --check ]]; then
+      tag=$(curl --fail --silent --show-error --connect-timeout 10 --max-time 30 "https://api.github.com/repos/$REPO/releases?per_page=1" |
+        python3 -c 'import json
+import sys
+
+print(next((r["tag_name"] for r in json.load(sys.stdin) if not r["draft"]), ""))')
+    else tag=$mode; fi
+    valid_tag "$tag" || { echo 'No valid published release found.' >&2; exit 1; }
+    echo "Installed: ${old#releases/}; selected: $tag"
+    [[ $mode != --check ]] || exit 0
+    target="releases/$tag"
+    [[ $target != "$old" ]] || { echo 'Already current.'; exit 0; }
+    stage=$(mktemp -d "$APP_DIR/.download.XXXXXX")
+    download_release "$tag" "$stage"
+    verify_release "$stage" || { echo 'Release checksum verification failed; no changes made.' >&2; exit 1; }
+    chmod 0755 "$stage" "$stage/jet-supermicro-linux-amd64" "$stage/jet-supermicro-update"
+    chmod 0644 "$stage/jet-supermicro-login.sh" "$stage/jet-supermicro.service" "$stage/SHA256SUMS"
+    if [[ -e $APP_DIR/$target ]]; then
+      if ! verify_release "$APP_DIR/$target" || ! cmp -s "$stage/SHA256SUMS" "$APP_DIR/$target/SHA256SUMS"; then echo 'Existing release differs; refusing overwrite.' >&2; exit 1; fi
+    else
+      mv "$stage" "$APP_DIR/$target"
+      stage=''
+    fi
+  fi
+  changed=1
+  switch_to "$target"
+  systemctl daemon-reload
+  systemctl restart jet-supermicro
+  healthy || { echo 'New version failed its startup check.' >&2; exit 1; }
+  ln -sfnT "$old" "$APP_DIR/.previous-next"
+  mv -Tf "$APP_DIR/.previous-next" "$APP_DIR/previous"
+  changed=0
+  echo "Running ${target#releases/}. Configuration and history preserved."
+)
+
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then main "$@"; fi

@@ -1,0 +1,63 @@
+.widget-vnc {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.vnc-console {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  padding: 0.75rem;
+  background: var(--panel);
+}
+.vnc-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.vnc-toolbar [role="status"] {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  font-size: 12px;
+  color: var(--muted);
+}
+.vnc-toolbar button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+.vnc-toolbar button[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.vnc-hint {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 6px 0;
+}
+.vnc-screen {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.vnc-display-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  background: #080e12;
+}
+.vnc-empty {
+  position: absolute;
+  inset: 0;
+  justify-content: center;
+}
+.vnc-console:fullscreen {
+  height: 100vh;
+}
