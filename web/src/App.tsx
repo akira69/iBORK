@@ -270,8 +270,10 @@ export function App() {
                 >
                   <img src="/ibork.svg" alt="iBORK" width="64" height="64" />
                   <h1>Information</h1>
-                  <Information />
-                  <h2>iBORK settings</h2>
+                  <Information emptyFleet />
+                  <h2 id="add-first-server" tabIndex={-1}>
+                    iBORK settings
+                  </h2>
                   <p>
                     No devices saved. Add a server or standalone KVM to begin.
                   </p>

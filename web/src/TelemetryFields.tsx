@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState } from "react";
+import glancesLogo from "./assets/glances.svg";
 const GlancesSetup = lazy(() => import("./GlancesSetup"));
 
 export type Telemetry = {
@@ -57,7 +58,7 @@ export function TelemetryFields({
     );
   }
   return (
-    <fieldset className="connection-fields">
+    <fieldset className="connection-fields telemetry-fields">
       <legend>Hardware telemetry</legend>
       {field(
         "glancesUrl",
@@ -71,7 +72,10 @@ export function TelemetryFields({
           if (e.currentTarget.open) setGuideOpened(true);
         }}
       >
-        <summary>Connect Glances over SSH</summary>
+        <summary>
+          <img src={glancesLogo} width="19" height="20" alt="" /> Connect
+          Glances over SSH
+        </summary>
         {guideOpened && (
           <Suspense fallback={<p role="status">Loading setup guide…</p>}>
             <GlancesSetup

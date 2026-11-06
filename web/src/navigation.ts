@@ -55,6 +55,8 @@ export function readNavigation(devices: Device[]): Navigation {
     if (value.view !== "server" && value.view !== "wall") return fallback;
     const device = devices.find((item) => item.id === value.deviceId);
     if (!device) return fallback;
+    if (globalThis.location?.hash.startsWith("#guide-"))
+      return { ...fallback, deviceId: device.id };
     const tab = supportsTab(device, value.tab)
       ? value.tab
       : defaultDeviceTab(device);
@@ -65,6 +67,15 @@ export function readNavigation(devices: Device[]): Navigation {
 }
 
 export function writeNavigation(value: Navigation) {
+  if (
+    globalThis.location?.hash.startsWith("#guide-") &&
+    (value.view !== "server" || value.tab !== "Information")
+  )
+    history.replaceState(
+      history.state,
+      "",
+      location.pathname + location.search,
+    );
   try {
     localStorage.setItem(navigationKey, JSON.stringify(value));
   } catch {

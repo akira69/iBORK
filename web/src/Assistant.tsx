@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, useLayoutEffect } from "react";
+import { useEffect, useId, useRef, useState, useLayoutEffect } from "react";
+import { Cable, Network, SlidersHorizontal } from "lucide-react";
+import { CopyButton } from "./CopyButton";
 import { createPortal } from "react-dom";
 import { ReviewedConnection } from "./ConnectionSettings";
 import type { SettingsSection } from "./AssistantDrawer";
@@ -64,7 +66,7 @@ export default function Assistant({
   useLayoutEffect(() => {
     if (!host || !link || lastLink.current === link.request) return;
     const outer = host.closest("details");
-    const section = host.querySelector<HTMLDetailsElement>(
+    const section = host.querySelector<HTMLButtonElement>(
       `[data-section="${link.section}"]`,
     );
     if (!outer) return;
@@ -74,8 +76,8 @@ export default function Assistant({
       return;
     }
     lastLink.current = link.request;
-    section.open = true;
-    section.querySelector("summary")?.focus();
+    section.click();
+    section.focus();
     section.scrollIntoView({ block: "center" });
   }, [host, link, status]);
   useEffect(() => {
@@ -396,6 +398,22 @@ function AssistantSettings({
   onScope: (state: State) => void;
 }) {
   const t = assistantCopy(navigator.language);
+  const [section, setSection] = useState<SettingsSection>("provider");
+  const prefix = useId();
+  const tabs = ["provider", "scope", "connect"] as const;
+  const icons = { provider: SlidersHorizontal, scope: Network, connect: Cable };
+  const mcpConfig = JSON.stringify(
+    {
+      mcpServers: {
+        ibork: {
+          url: location.origin + "/api/assistant/mcp",
+          headers: { Authorization: "Bearer <token>" },
+        },
+      },
+    },
+    null,
+    2,
+  );
   const [base, setBase] = useState(provider.base);
   const [model, setModel] = useState(provider.model);
   const [hasKey, setHasKey] = useState(provider.hasKey);
@@ -405,33 +423,75 @@ function AssistantSettings({
   const [expiry, setExpiry] = useState("");
   return (
     <div className="assistant-body">
-      <details data-section="provider">
-        <summary>{t.provider}</summary>
-        <label>
-          {t.endpoint}
-          <input
-            value={base}
-            onChange={(e) => {
-              setBase(e.target.value);
-              setKey("");
-              setHasKey(false);
-            }}
-            placeholder="https://…/v1"
-          />
-        </label>
-        <label>
-          {t.model}
-          <input value={model} onChange={(e) => setModel(e.target.value)} />
-        </label>
-        <label>
-          {t.key}
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-          />
-        </label>
+      <div className="assistant-tabs" role="tablist" aria-label={t.settings}>
+        {tabs.map((id, index) => {
+          const Icon = icons[id];
+          return (
+            <button
+              type="button"
+              role="tab"
+              key={id}
+              id={prefix + id}
+              data-section={id}
+              aria-label={t[id]}
+              title={t[id]}
+              aria-controls={prefix + id + "-panel"}
+              aria-selected={section === id}
+              tabIndex={section === id ? 0 : -1}
+              onClick={() => setSection(id)}
+              onKeyDown={(event) => {
+                const next = {
+                  ArrowLeft: (index + 2) % 3,
+                  ArrowRight: (index + 1) % 3,
+                  Home: 0,
+                  End: 2,
+                }[event.key];
+                if (next === undefined) return;
+                event.preventDefault();
+                setSection(tabs[next]);
+                document.getElementById(prefix + tabs[next])?.focus();
+              }}
+            >
+              <Icon />
+              {t.shortTabs[id]}
+            </button>
+          );
+        })}
+      </div>
+      <section
+        role="tabpanel"
+        id={prefix + "provider-panel"}
+        aria-labelledby={prefix + "provider"}
+        hidden={section !== "provider"}
+      >
+        <h3>{t.provider}</h3>
+        <div className="assistant-model-fields">
+          <label>
+            {t.endpoint}
+            <input
+              value={base}
+              onChange={(e) => {
+                setBase(e.target.value);
+                setKey("");
+                setHasKey(false);
+              }}
+              placeholder="https://…/v1"
+            />
+          </label>
+          <label>
+            {t.model}
+            <input value={model} onChange={(e) => setModel(e.target.value)} />
+          </label>
+          <label>
+            {t.key}
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+            />
+          </label>
+        </div>
         {hasKey && <p>{t.retained}</p>}
         <button
           disabled={busy || !model || !base}
@@ -454,9 +514,14 @@ function AssistantSettings({
         >
           {t.test}
         </button>
-      </details>
-      <details data-section="scope">
-        <summary>{t.scope}</summary>
+      </section>
+      <section
+        role="tabpanel"
+        id={prefix + "scope-panel"}
+        aria-labelledby={prefix + "scope"}
+        hidden={section !== "scope"}
+      >
+        <h3>{t.scope}</h3>
         <label>
           {t.hosts}
           <input value={scope} onChange={(e) => setScope(e.target.value)} />
@@ -473,30 +538,27 @@ function AssistantSettings({
         >
           {t.approve}
         </button>
-      </details>
-      <p>
-        {t.scopeLabel}: {approvedScope || t.noScope}
-      </p>
-      <details data-section="connect">
-        <summary>{t.connect}</summary>
+        <p>
+          {t.scopeLabel}: {approvedScope || t.noScope}
+        </p>
+      </section>
+      <section
+        role="tabpanel"
+        id={prefix + "connect-panel"}
+        aria-labelledby={prefix + "connect"}
+        hidden={section !== "connect"}
+      >
+        <h3>{t.connect}</h3>
         <p>{t.pairHelp}</p>
-        <textarea
-          readOnly
-          aria-label="MCP JSON"
-          onFocus={(e) => e.target.select()}
-          value={JSON.stringify(
-            {
-              mcpServers: {
-                ibork: {
-                  url: location.origin + "/api/assistant/mcp",
-                  headers: { Authorization: "Bearer <token>" },
-                },
-              },
-            },
-            null,
-            2,
-          )}
-        />
+        <div className="assistant-copy">
+          <textarea
+            readOnly
+            aria-label="MCP JSON"
+            onFocus={(e) => e.target.select()}
+            value={mcpConfig}
+          />
+          <CopyButton label={t.copyConfig} text={mcpConfig} />
+        </div>
         <div>
           <button
             disabled={busy}
@@ -532,15 +594,18 @@ function AssistantSettings({
           </p>
         )}
         {secret && (
-          <input
-            aria-label="Bearer token"
-            readOnly
-            title={expiry}
-            value={secret}
-            onFocus={(e) => e.target.select()}
-          />
+          <div className="assistant-copy">
+            <input
+              aria-label="Bearer token"
+              readOnly
+              title={expiry}
+              value={secret}
+              onFocus={(e) => e.target.select()}
+            />
+            <CopyButton label={t.copyToken} text={secret} />
+          </div>
         )}
-      </details>
+      </section>
       <p role="status">{feedback}</p>
     </div>
   );

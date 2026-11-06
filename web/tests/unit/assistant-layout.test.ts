@@ -20,3 +20,29 @@ it("closes gaps and preserves target widget identities", () => {
   expect(copy.widgets[1]).toEqual(target.widgets[1]);
   expect(target.widgets[0].y).toBe(7);
 });
+
+it("copies each sensor slot once while keeping destination IDs and bindings", () => {
+  const sensor = target.widgets[1];
+  const source: DashboardLayout = {
+    version: 1,
+    widgets: [
+      { ...sensor, id: "shared", x: 0, y: 0 },
+      { ...sensor, id: "source-only", x: 3, y: 1, w: 5, h: 4 },
+    ],
+  };
+  const local = {
+    ...sensor,
+    id: "local",
+    sensorMode: "fixed" as const,
+    sensorIds: ["fan", "psu"],
+  };
+  const shared = { ...sensor, id: "shared", sensorId: "ambient" };
+  const extra = { ...sensor, id: "extra", y: 22 };
+  expect(
+    arrange({ version: 1, widgets: [local, shared, extra] }, source).widgets,
+  ).toEqual([
+    { ...local, x: 3, y: 1, w: 5, h: 4 },
+    { ...shared, x: 0, y: 0 },
+    extra,
+  ]);
+});

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run on the iBORK Debian/systemd host in a root terminal. The UI embeds this file.
+# Run on the iBORK Debian/systemd host in a root terminal. The installed CLI embeds this helper.
 set -euo pipefail
 die() { printf '%s\n' "$*" >&2; exit 1; }
 [[ $EUID == 0 ]] || die 'Run in a root shell on the iBORK host.'
@@ -29,28 +29,13 @@ flock -n 9 || die 'Setup for this server is already running.'
 [[ ! -e $unit ]] || die "$unit already exists. Check systemctl status $name before changing it."
 [[ -f $dir/identity ]] || ssh-keygen -q -t ed25519 -N '' -C "$name" -f "$dir/identity"
 pub=$(ssh-keygen -y -f "$dir/identity" | cut -d' ' -f1,2)
-cat <<REMOTE
-
-On the Glances server, run this block as root:
-
-(
-set -eu
-id ibork-glances >/dev/null 2>&1 || adduser --system --group --home /var/lib/ibork-glances --shell /usr/sbin/nologin ibork-glances
-test "\$(getent passwd ibork-glances | cut -d: -f6)" = /var/lib/ibork-glances
-key='from="$source_ip",restrict,port-forwarding,permitopen="127.0.0.1:61208",permitlisten="127.0.0.1:1",command="/usr/sbin/nologin" $pub'
-runuser -u ibork-glances -- sh -eu -c '
-  umask 077
-  cd /var/lib/ibork-glances
-  mkdir -p .ssh
-  touch .ssh/authorized_keys
-  chmod 700 .ssh
-  chmod 600 .ssh/authorized_keys
-  grep -qxF "\$1" .ssh/authorized_keys || echo "\$1" >> .ssh/authorized_keys
-' sh "\$key"
-cat /etc/ssh/ssh_host_ed25519_key.pub
-)
-
-REMOTE
+if [[ ${3:-} == --guided ]]; then
+  printf 'Paste this public pairing line into Glances setup in iBORK:\n%s %s\n' "$source_ip" "$pub"
+else
+  printf '\nOn the Glances server, run this block as root:\n\n(\nset -eu\n'
+  sed -e "s|SOURCE_IPV4|$source_ip|g" -e "s|SSH_PUBLIC_KEY|$pub|g" "$(dirname "$0")/glances-authorize.sh"
+  printf ')\n\n'
+fi
 printf 'Paste the ssh-ed25519 HOST PUBLIC key printed by that server, then press Enter: '
 read -r kind blob _ </dev/tty
 [[ $kind == ssh-ed25519 && $blob =~ ^[A-Za-z0-9+/]{68}$ ]] || die 'Expected one OpenSSH Ed25519 public host key.'
@@ -101,7 +86,9 @@ if systemctl start "$name"; then
       ss -ltnpH "sport = :$port" | grep -F "pid=$pid," >/dev/null &&
       curl -fsS --noproxy '*' --connect-timeout 2 --max-time 4 "$origin/api/4/sensors" |
         python3 -c '
-import json, sys
+import json
+import sys
+
 limit = 256 * 1024
 data = sys.stdin.buffer.read(limit + 1)
 sys.exit(0 if len(data) <= limit and isinstance(json.loads(data), list) else 1)

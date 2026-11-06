@@ -10,10 +10,10 @@ test("fresh visits show the shared guide with credits, above Settings and on mob
   ).toBeVisible();
   const guide = page.getByRole("article", { name: "iBORK usage guide" });
   await expect(
-    guide.getByRole("heading", { name: "Welcome to iBORK" }),
+    guide.getByRole("heading", { name: "Operator handbook" }),
   ).toBeVisible();
   await expect(
-    guide.getByText("Use Edit layout", { exact: false }),
+    guide.getByRole("heading", { name: "Dashboard layouts" }),
   ).toBeVisible();
   await expect(guide.getByAltText("Finch13")).toBeVisible();
   await expect(
@@ -33,8 +33,25 @@ test("fresh visits show the shared guide with credits, above Settings and on mob
   );
   await page.screenshot({
     path: "test-results/screenshots/information-desktop.png",
-    fullPage: true,
   });
+  const contents = guide.getByRole("navigation", { name: "Guide contents" });
+  const links = contents.getByRole("link");
+  for (const link of await links.all()) {
+    const id = await link.getAttribute("href");
+    await expect(
+      guide.locator(id!).getByRole("heading", { level: 2 }),
+    ).toHaveText(await link.innerText());
+  }
+  await contents.getByRole("link", { name: "iBORK Assistant" }).click();
+  const assistant = guide.locator("#guide-ibork-assistant");
+  await expect(assistant.getByRole("heading", { level: 2 })).toBeInViewport();
+  await expect(
+    assistant.getByText("Assistant settings → MCP", {
+      exact: true,
+    }),
+  ).toHaveJSProperty("tagName", "STRONG");
+  await assistant.getByRole("link", { name: "Contents" }).click();
+  await expect(contents.getByRole("heading")).toBeInViewport();
   await page.setViewportSize({ width: 390, height: 844 });
   await page
     .getByRole("button", { name: "iBORK settings", exact: true })
@@ -46,8 +63,13 @@ test("fresh visits show the shared guide with credits, above Settings and on mob
   ).toBeLessThanOrEqual(390);
   await page.screenshot({
     path: "test-results/screenshots/information-mobile.png",
-    fullPage: true,
   });
+  const help = contents.getByRole("link", { name: "Connection help" });
+  await help.focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    guide.getByRole("heading", { name: "Connection help" }),
+  ).toBeInViewport();
 });
 
 test("restores a selected server and tab after reload, including terminals, settings and wall", async ({

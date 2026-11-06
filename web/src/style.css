@@ -1932,28 +1932,6 @@ input[role="switch"]:checked::before {
   height: 60px;
   padding: 8px;
 }
-.information {
-  max-width: 960px;
-  margin: 0 auto;
-}
-.information > section {
-  margin-bottom: 16px;
-}
-.information p {
-  line-height: 1.65;
-}
-.information-credit {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 24px 12px 36px;
-  text-align: center;
-}
-.information-credit a {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
 .sensor-options,
 .sensor-options label {
   display: flex;
@@ -2246,24 +2224,92 @@ input[role="switch"]:checked::before {
   min-width: 0;
   margin: 0;
 }
+.telemetry-fields,
 .glances-setup {
   grid-column: 1 / -1;
   min-width: 0;
 }
-.glances-setup summary {
-  cursor: pointer;
+.settings-grid:has(.glances-setup[open]) {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
+  max-width: none;
 }
-.glances-setup > div {
+.connection-settings:has(.glances-setup[open]) {
+  grid-column: 1 / -1;
+}
+.glances-setup {
+  border: 1px solid #36514b;
+  border-radius: 7px;
+  background: #172827;
+  padding: 8px 12px;
+}
+.glances-guide {
   display: grid;
   gap: 10px;
-  padding-block: 12px;
+  margin-top: 10px;
+  min-width: 0;
 }
-.glances-setup button {
-  justify-self: start;
+.glances-guide p {
+  font-size: 0.83rem;
+  line-height: 1.45;
+  color: #bccdcb;
+  margin: 0;
 }
-.glances-setup textarea {
-  width: 100%;
-  font-family: monospace;
+.glances-fields,
+.glances-hosts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 10px 16px;
+}
+.glances-guide h4 {
+  color: #b0e8d1;
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+}
+.glances-hosts section {
+  min-width: 0;
+  border-top: 1px solid #345047;
+  padding-top: 10px;
+}
+.glances-guide ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.glances-command {
+  margin: 6px 0;
+  font-size: 0.82rem;
+}
+.glances-command > div {
+  display: flex;
+  align-items: center;
+  background: #101c1d;
+  border: 1px solid #344a44;
+  border-radius: 5px;
+  padding: 1px 3px 1px 9px;
+}
+.glances-command code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  user-select: all;
+  font:
+    0.78rem/1.7 Consolas,
+    monospace;
+}
+.glances-guide .glances-fields input,
+.glances-hosts input {
+  padding: 7px 9px;
+}
+.glances-finish {
+  border-top: 1px solid #345047;
+  padding-top: 10px;
+}
+.glances-finish button {
+  margin-top: 6px;
+  padding: 5px 8px;
+  flex-wrap: wrap;
+  color: var(--accent);
 }
 .certificate-field {
   position: relative;
@@ -2620,4 +2666,16 @@ select {
   padding: 20px;
   text-align: center;
   pointer-events: none;
+}
+.glances-origin {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 0.82rem;
+}
+.glances-origin button {
+  margin: 0;
+  min-width: 32px;
+  min-height: 32px;
 }

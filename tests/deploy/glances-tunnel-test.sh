@@ -2,8 +2,9 @@
 # Run as root on a Linux test host with unshare, overlayfs and util-linux script.
 set -euo pipefail
 setup=$(realpath "$(dirname "$0")/../../deploy/glances-tunnel.sh")
-unshare --mount --propagation private bash -seu -o pipefail -s -- "$setup" <<'TEST'
+unshare --mount --propagation private bash -seu -o pipefail -s -- "$setup" "${1:-}" <<'TEST'
 setup=$1
+cli=$2
 tmp=$(mktemp -d)
 trap 'umount /etc 2>/dev/null || :; rm -rf -- "$tmp"' EXIT
 mkdir "$tmp"/{etc,work,bin}
@@ -34,7 +35,12 @@ unit=/etc/systemd/system/$name.service
 test ! -e "$unit" && test ! -e "/etc/$name" || exit 1
 run() { script -qec "bash '$setup' 127.0.0.2 62001" /dev/null < "$tmp/host.pub" > "$tmp/output"; }
 touch "$tmp/timeout"
-if run; then echo 'Timeout unexpectedly succeeded'; exit 1; fi
+if [[ -n $cli ]]; then
+  if script -qec "'$cli' glances-tunnel 127.0.0.2 62001" /dev/null < "$tmp/host.pub" > "$tmp/output"; then
+    echo 'Packaged CLI ignored a sensor timeout'; exit 1
+  fi
+  tr -d '\r' < "$tmp/output" | grep -Ex '127\.0\.0\.1 ssh-ed25519 [A-Za-z0-9+/]{68}' >/dev/null
+elif run; then echo 'Timeout unexpectedly succeeded'; exit 1; fi
 test ! -e "$unit"
 test ! -e "/etc/$name/known_hosts"
 grep -qx disable "$tmp/calls"

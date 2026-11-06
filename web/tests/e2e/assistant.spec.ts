@@ -42,7 +42,7 @@ test("desktop chat keeps its draft and transcript while the operator navigates",
   await expect(
     page.getByLabel("Private IPv4 addresses or subnet"),
   ).toBeVisible();
-  await expect(page.locator('[data-section="scope"] summary')).toBeFocused();
+  await expect(page.locator('[data-section="scope"]')).toBeFocused();
   await launcher.click();
   await expect(drawer.getByText("Earlier reply")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -80,7 +80,7 @@ test("empty fleet opens assistant settings from the mobile Remote display page",
   );
   await drawer.getByRole("button", { name: "Connect my agent (MCP)" }).click();
   await expect(page.getByLabel("MCP JSON")).toBeVisible();
-  await expect(page.locator('[data-section="connect"] summary')).toBeFocused();
+  await expect(page.locator('[data-section="connect"]')).toBeFocused();
   await expect(
     page.getByRole("button", { name: "Remote display" }),
   ).toBeVisible();

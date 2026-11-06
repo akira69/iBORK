@@ -15,12 +15,19 @@ export function arrange(
   source?: DashboardLayout,
 ): DashboardLayout {
   const placed: DashboardWidget[] = [];
+  // Reserve shared IDs, then pair independently created sensor panels in saved order.
+  const unpairedSensors = source?.widgets.filter(
+    (s) =>
+      s.kind === "sensor" &&
+      !target.widgets.some((t) => t.kind === "sensor" && t.id === s.id),
+  );
   // Give matching panels their source geometry first; preserve each destination's sensor bindings.
   const proposals = target.widgets
     .map((widget) => {
-      const match = source?.widgets.find(
-        (s) => s.kind === widget.kind && s.id === widget.id,
-      );
+      const match =
+        source?.widgets.find(
+          (s) => s.kind === widget.kind && s.id === widget.id,
+        ) ?? (widget.kind === "sensor" ? unpairedSensors?.shift() : undefined);
       const geometry = match
         ? { x: match.x, y: match.y, w: match.w, h: match.h }
         : {};
