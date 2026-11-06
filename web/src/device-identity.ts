@@ -31,6 +31,10 @@ export type Device = {
   hasJetKVM: boolean;
   hasVNC?: boolean;
 };
+export const endpointKeyFor = (d: Device) =>
+  d.hasManagement !== false ? d.bmcHost + ":" + d.bmcPort : "device:" + d.id;
+export const dashboardKey = (d: Device) =>
+  "jet-supermicro:dashboard:v1:" + endpointKeyFor(d);
 export const displayKey = (device: Device) =>
   `jet-supermicro:display:v1:${device.bmcHost ? `${device.bmcHost}:${device.bmcPort}` : `device:${device.id}`}`;
 

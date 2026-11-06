@@ -93,6 +93,10 @@ func (s *Server) deviceSettings(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err.Error())
 		return
 	}
+	s.finishDeviceSave(w)
+}
+
+func (s *Server) finishDeviceSave(w http.ResponseWriter) {
 	s.mu.Lock()
 	s.reloading = true
 	s.mu.Unlock()
