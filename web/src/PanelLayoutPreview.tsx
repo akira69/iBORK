@@ -454,7 +454,7 @@ export function PanelLayoutPreview({
                     {[
                       "Wi-Fi setup",
                       "Change power PIN",
-                      "Display schedule",
+                      "Display",
                       `Color: ${palette}`,
                     ].map((v) => (
                       <div key={v}>
