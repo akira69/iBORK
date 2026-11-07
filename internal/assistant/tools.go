@@ -34,6 +34,9 @@ var Tools = []Tool{
 	tool("discover_devices", "Look for supported devices only on the network approved in iBORK.", nil),
 	tool("propose_server", "Draft one server using discovered candidate IDs. Supply name and bmc and/or kvm.", []string{"name"}, "name", "bmc", "kvm"),
 	tool("propose_layout", "Propose tidying one Console dashboard or copying its panel positions to another. Use server IDs from setup_status. The browser previews and applies.", []string{"source", "target"}, "source", "target"),
+	tool("dashboard_context", "Read the active browser dashboard, revision, widget catalog, server capabilities and arrangement guide.", nil),
+	tool("dashboard_sensors", "Read bounded sensor choices for one known server. No controls are executed.", []string{"deviceId"}, "deviceId"),
+	dashboardProposalTool(),
 }
 
 type Candidate struct {
@@ -53,19 +56,26 @@ type Layout struct {
 	Target string `json:"target"`
 }
 type Grant struct {
-	Scope      string            `json:"scope"`
-	Servers    map[string]string `json:"servers"`
-	Candidates []Candidate       `json:"candidates"`
-	Draft      *Draft            `json:"draft,omitempty"`
-	Layout     *Layout           `json:"layout,omitempty"`
-	Scan       string            `json:"scan,omitempty"`
+	Dashboard            *Dashboard                                               `json:"dashboard,omitempty"`
+	DashboardDevices     map[string]DashboardDevice                               `json:"-"`
+	ReadDashboardSensors func(context.Context, string) ([]DashboardSensor, error) `json:"-"`
+	dashboardPrevious    string
+	Scope                string            `json:"scope"`
+	Servers              map[string]string `json:"servers"`
+	Candidates           []Candidate       `json:"candidates"`
+	Draft                *Draft            `json:"draft,omitempty"`
+	Layout               *Layout           `json:"layout,omitempty"`
+	Scan                 string            `json:"scan,omitempty"`
 }
 
 func arguments(raw json.RawMessage, dest any) error {
+	return decodeArguments(raw, dest, 2048)
+}
+func decodeArguments(raw json.RawMessage, dest any, limit int) error {
 	if len(raw) == 0 {
 		raw = []byte("{}")
 	}
-	if len(raw) > 2048 || !strings.HasPrefix(strings.TrimSpace(string(raw)), "{") {
+	if len(raw) > limit || !strings.HasPrefix(strings.TrimSpace(string(raw)), "{") {
 		return errors.New("expected a small arguments object")
 	}
 	d := json.NewDecoder(strings.NewReader(string(raw)))
@@ -80,6 +90,8 @@ func (g *Grant) Call(ctx context.Context, name string, args json.RawMessage) (an
 		return nil, err
 	}
 	switch name {
+	case "dashboard_context", "dashboard_sensors", "propose_dashboard":
+		return g.dashboardCall(ctx, name, args)
 	case "setup_status", "discover_devices":
 		if err := arguments(args, &struct{}{}); err != nil {
 			return nil, err

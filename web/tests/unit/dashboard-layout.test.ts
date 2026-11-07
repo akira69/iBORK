@@ -135,7 +135,7 @@ describe("saved dashboard boundary", () => {
       { x: 11, w: 2 },
       { w: 13 },
       { w: 1 },
-      { h: 1 },
+      { h: 0 },
       { h: 25 },
       { kind: "html" },
       { id: "" },
@@ -171,5 +171,60 @@ describe("saved dashboard boundary", () => {
       },
     });
     expect(readLayout("layout").layout).toEqual(defaultLayout());
+  });
+  it("accepts compact readings without resizing saved widgets", () => {
+    expect(catalog.sensor).toMatchObject({ minW: 2, minH: 1, h: 1 });
+    expect(catalog["power-now"]).toMatchObject({ minH: 1, h: 1 });
+    expect(parse([{ ...sensor(), h: 1 }])?.widgets[0].h).toBe(1);
+    expect(parse([sensor()])?.widgets[0].h).toBe(2);
+  });
+  it("preserves bounded titles and scoped lists and maxima", () => {
+    const widget = {
+      ...sensor(),
+      sensorId: undefined,
+      deviceIds: ["rack-a"],
+      sensorIds: ["FAN1", "FAN2"],
+      aggregate: "max",
+      title: "Highest fan",
+    };
+    expect(parse([widget])?.widgets[0]).toEqual(widget);
+    for (const patch of [
+      { aggregate: "sum" },
+      { sensorIds: [] },
+      { title: "a".repeat(101) },
+      { title: 1 },
+    ])
+      expect(parse([{ ...widget, ...patch }])).toBeNull();
+    const titled = { ...defaultLayout().widgets[0], title: "Remote console" };
+    expect(parse([titled])?.widgets[0]).toEqual(titled);
+  });
+  it("limits scoped consoles to one server and rejects sensor-only fields", () => {
+    for (const kind of ["jetkvm", "vnc", "glinet"] as const) {
+      const widget = {
+        id: `scoped-${kind}`,
+        kind,
+        x: 0,
+        y: 0,
+        w: 8,
+        h: 6,
+        deviceIds: ["rack-a"],
+      };
+      expect(parse([widget])?.widgets[0]).toEqual(widget);
+      expect(parse([widget, { ...widget, id: `second-${kind}` }])).toBeNull();
+      expect(
+        parse([
+          widget,
+          { ...widget, id: `second-${kind}`, deviceIds: ["rack-b"] },
+        ]),
+      ).not.toBeNull();
+      for (const patch of [
+        { deviceIds: ["rack-a", "rack-b"] },
+        { sensorId: "fan" },
+        { sensorIds: ["fan"] },
+        { sensorMode: "fixed" },
+        { aggregate: "max" },
+      ])
+        expect(parse([{ ...widget, ...patch }])).toBeNull();
+    }
   });
 });

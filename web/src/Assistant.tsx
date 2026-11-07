@@ -22,9 +22,12 @@ import { assistantCopy } from "./assistant-copy";
 import { previewLayout } from "./assistant-layout";
 import { catalog } from "./dashboard-layout";
 import type { Device } from "./device-identity";
+import { useDashboardAssistant } from "./DashboardAssistant";
+import type { DashboardContext } from "./dashboard-draft";
 
 export type Draft = { id: string; name: string; host: string; jetUrl: string };
 type State = {
+  dashboard?: DashboardContext;
   scope: string;
   servers: Record<string, string>;
   candidates?: { id: string; address: string; evidence: string }[];
@@ -58,6 +61,7 @@ export default function Assistant({
   opened: boolean;
   onLayout?: (id: string) => void;
 }) {
+  const dashboards = useDashboardAssistant();
   const t = assistantCopy(navigator.language);
   const [status, setStatus] = useState<State>();
   const [savedModel, setSavedModel] = useState({
@@ -172,6 +176,7 @@ export default function Assistant({
     const controller = new AbortController();
     active.current = controller;
     setBusy(true);
+    dashboards?.setBusy(true);
     setNote("");
     try {
       await fn(
@@ -184,18 +189,26 @@ export default function Assistant({
       if (active.current === controller) {
         active.current = null;
         setBusy(false);
+        dashboards?.setBusy(false);
       }
     }
   }
-  function post<T>(path: string, body: unknown, signal: AbortSignal) {
+  async function post<T>(path: string, body: unknown, signal: AbortSignal) {
+    if (path === "pair") await dashboards?.sync(signal);
     return api<T>("assistant/" + path, {
       method: "POST",
-      headers: { "X-CSRF-Token": csrf },
+      headers: {
+        "X-CSRF-Token": csrf,
+        ...(dashboards
+          ? { "X-Assistant-Instance": dashboards.store.instance }
+          : {}),
+      },
       body: JSON.stringify(body),
       signal,
     });
   }
   function update(state: State) {
+    dashboards?.receive(state.dashboard);
     setStatus(state);
     setPreview(undefined);
     setReviewing(false);
@@ -215,6 +228,7 @@ export default function Assistant({
       setMessage("");
       composer.current?.focus();
       try {
+        await dashboards?.sync(signal);
         const result = await post<Turn>(
           "chat",
           {
@@ -288,6 +302,30 @@ export default function Assistant({
               aria-label={t.suggest}
             >
               <h3>{t.promptHeading}</h3>
+              {dashboards && (
+                <>
+                  <button
+                    onClick={() => {
+                      setMessage(
+                        "Use dashboard_context to arrange the current dashboard neatly. Preserve my existing widgets and show a preview.",
+                      );
+                      composer.current?.focus();
+                    }}
+                  >
+                    Arrange this dashboard
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMessage(
+                        "Add CPU temperatures, measured power and highest current fan RPM for each server on this dashboard. Use actual available sensors and show a preview.",
+                      );
+                      composer.current?.focus();
+                    }}
+                  >
+                    Add server readings
+                  </button>
+                </>
+              )}
               {[t.find, t.pairKvm, t.status, t.tidy, t.sync].map((label, i) => (
                 <button
                   key={label}
@@ -322,6 +360,12 @@ export default function Assistant({
             </div>
           ))}
         </div>
+        {status?.dashboard?.draft && (
+          <p role="status">
+            {status.dashboard.summary || "Dashboard draft updated."}{" "}
+            <button onClick={() => dashboards?.viewDraft()}>View draft</button>
+          </p>
+        )}
         {!!status?.candidates?.length && (
           <ul>
             {status.candidates.map((c) => (

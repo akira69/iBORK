@@ -1,5 +1,5 @@
 import { sourcesFor, type Device, type ConsoleSource } from "./device-identity";
-import { catalog } from "./dashboard-layout";
+import { catalog, type DashboardLayout } from "./dashboard-layout";
 export type WallEntry = {
   deviceId: string;
   source: ConsoleSource;
@@ -18,6 +18,35 @@ export type WallPreferences = {
   gridWidth?: number;
 };
 export const wallStorageKey = "jet-supermicro:kvm-wall:v1";
+export function wallDashboard(value: WallPreferences): DashboardLayout {
+  return {
+    version: 1,
+    widgets: value.entries
+      .filter((e) => e.included)
+      .map((e) => ({
+        id: `wall-${e.deviceId}`,
+        kind: e.source,
+        deviceIds: [e.deviceId],
+        x: e.x,
+        y: e.y,
+        w: e.w,
+        h: e.h,
+      })),
+  };
+}
+export function applyWallDashboard(
+  value: WallPreferences,
+  layout: DashboardLayout,
+): WallPreferences {
+  return {
+    ...value,
+    automatic: false,
+    entries: value.entries.map((e) => {
+      const w = layout.widgets.find((w) => w.id === `wall-${e.deviceId}`);
+      return w ? { ...e, x: w.x, y: w.y, w: w.w, h: w.h } : e;
+    }),
+  };
+}
 export const wallLimits = (source: ConsoleSource) => ({
   ...catalog[source === "vnc" ? "vnc" : "jetkvm"],
   minW: 3,

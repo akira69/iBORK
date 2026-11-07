@@ -20,13 +20,13 @@ After your first visit, this browser remembers your last server and page. Sign i
 
 ## iBORK Assistant
 
-Open the brain icon at the right edge of any signed-in page to chat. Ask the Assistant to find devices, pair a KVM or rearrange a Console dashboard. The gear in the chat header opens **Assistant settings**.
+Open the brain icon at the right edge of any signed-in page to chat. Ask the Assistant to find devices, pair a KVM or create and arrange the dashboard you are viewing. The gear in the chat header opens **Assistant settings**.
 
 ### Chat with a model
 
 In **Assistant settings → Model**, enter your provider’s OpenAI-compatible `/v1` endpoint and the ID of a tool-capable model. Choose **Test & save model** to set the shared default. The picker below your message lists models from that endpoint, including models installed in Ollama. Choose a chat model that supports tool calls. Your selection applies to this conversation.
 
-Type a question or choose a suggestion and edit it. Press `Enter` to send or `Shift+Enter` for a new line. The selected provider receives your messages and device findings. Use the connection form for device passwords.
+Type a question or choose a suggestion and edit it. Press `Enter` to send or `Shift+Enter` for a new line. The selected provider receives your messages, dashboard layout, sensor readings and device findings. Use the connection form for device passwords.
 
 ### Discover and verify devices
 
@@ -34,9 +34,13 @@ In **Assistant settings → Discovery**, approve private IPv4 addresses or a sub
 
 ### Connect your own agent
 
-On the HTTPS site, open **Assistant settings → MCP**. Copy the client configuration and put the temporary token in your client’s secret settings. Tokens expire within 15 minutes. Discovery requires an approved network. Your agent can read server names and propose layouts without one. Reopen the chat to see its latest proposals. Changing scope, revoking the token or signing out ends access.
+On the HTTPS site, open **Assistant settings → MCP**. Copy the client configuration and put the temporary token in your client's secret settings. Tokens expire within 15 minutes. Discovery requires an approved network. Your agent can read server names and propose layouts without one. Keep chat open to receive dashboard proposals automatically. Chat and MCP share dashboard context, sensor discovery, proposal validation and arrangement guidance. Applying a dashboard remains an explicit browser action. Changing scope, revoking the token or signing out ends access.
 
 ### Preview a layout
+
+Ask “Add CPU temperatures, power and highest current fan RPM for each server.” The actual widgets appear in one unsaved preview. Refine it through chat or the normal layout editor; subsequent turns see your manual changes. **Current / Draft** compares layouts. **Apply dashboard** saves the draft to this browser; **Discard** restores the saved layout. Closing chat keeps the preview, while reload or sign-out drops unsaved drafts. On a small screen, **View draft** and **Continue in chat** switch between canvas and conversation.
+
+This works across server dashboards, Central Dashboard, Power Overview, telemetry pages and KVM Wall. Fixed telemetry pages and Wall preserve their existing widget inventory while allowing arrangement. Hardware controls and console input stay disabled in previews. A conflicting saved edit stops Apply; discard and reload before drafting again. One browser tab owns the assistant dashboard context at a time, and copied tabs get distinct identities.
 
 Try **Tidy my dashboard** to close gaps, or **Copy a layout** to copy panel positions and sizes between servers. Review the destination in the preview. **Apply to this browser** saves the arrangement. The destination keeps its widgets and sensor selections.
 
@@ -58,7 +62,9 @@ Open **KVM Wall → Power Overview** to see each server’s power source and sam
 
 ### Compare a group
 
-In **Central Dashboard → Edit layout**, add a power or sensor widget for one server, or choose **Combined power** and select a group. Last-hour charts count intervals where every selected server has readings at most 150 seconds apart. Energy and estimated cost cover those same intervals. Different widgets can use overlapping groups.
+In **Central Dashboard → Edit layout**, add a power or sensor widget for one server, or choose **Combined power** and select a group. CPU cards can show multiple temperatures; highest fan RPM means the highest currently valid reading, not rated maximum. Different widgets can use overlapping groups.
+
+Last-hour charts in Central Dashboard and Power Overview add each server's valid recorded intervals independently. Missing servers no longer suppress other history. Lines break when contributors change or samples are more than 150 seconds apart. Incomplete recorded energy and cost are labeled **Partial**, and missing data is never counted as zero. Coverage measures recorded server-time: three complete histories out of four servers means 75%. Expand **History details** for contributors and missing-data explanations. Paired-display fleet totals keep their existing common-interval behavior.
 
 ### Estimate cost
 
@@ -68,7 +74,7 @@ Set the shared USD/kWh rate in **iBORK settings → Electricity cost**. The init
 
 Use **Edit layout** to add or remove widgets. Drag a title bar, or focus it and use the arrow keys to move the widget. Resize with the corner or size controls, then choose **Done**.
 
-The Central Dashboard has its own layout. Arrange its widgets on a wider screen. Layouts, display names and sidebar shortcuts are saved in this browser. KVM Wall also remembers its last view.
+Central Dashboard and Power Overview have separate layouts. Individual sensor and current-power cards can shrink to one row; existing saved sizes remain intact. Central Dashboard also offers available JetKVM, VNC and Comet consoles. Each server/provider console can appear once and reuses its existing session; adding a card does not connect it automatically. Arrange widgets on a wider screen. Layouts, display names and sidebar shortcuts are saved in this browser. KVM Wall also remembers its last view.
 
 ## Sensors and management
 

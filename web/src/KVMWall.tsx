@@ -43,6 +43,8 @@ import {
 } from "./kvm-wall";
 import "gridstack/dist/gridstack.css";
 import { ServerIcon } from "./ServerIcon";
+import { DashboardPreview, useDashboardSurface } from "./DashboardAssistant";
+import { wallDashboard, applyWallDashboard, wallStorageKey } from "./kvm-wall";
 const FleetTelemetry = lazy(async () => ({
   default: (await import("./FleetTelemetry")).FleetTelemetry,
 }));
@@ -56,6 +58,7 @@ type WallView = keyof typeof wallViews;
 const tabKey = "ibork:wall-view:v1";
 const labels = { jetkvm: "JetKVM", vnc: "VNC", glinet: "Comet Pro" };
 type Board = {
+  active: boolean;
   devices: Device[];
   displays: Record<string, Display>;
   value: WallPreferences;
@@ -151,7 +154,9 @@ function Tile({ deviceId }: Record<string, unknown>) {
             aria-label="Connect"
             title="Connect"
             disabled={
-              live || ["connecting", "reconnecting"].includes(snapshot.phase)
+              board.editing ||
+              live ||
+              ["connecting", "reconnecting"].includes(snapshot.phase)
             }
             onClick={() => store.connect(key)}
           >
@@ -160,7 +165,7 @@ function Tile({ deviceId }: Record<string, unknown>) {
           <button
             aria-label="Disconnect"
             title="Disconnect"
-            disabled={snapshot.phase === "disconnected"}
+            disabled={board.editing || snapshot.phase === "disconnected"}
             onClick={() => store.disconnect(key)}
           >
             <Unplug size={16} />
@@ -177,8 +182,8 @@ function Tile({ deviceId }: Record<string, unknown>) {
       <div className="wall-preview">
         <ConsoleSlot
           sessionKey={key}
-          visible={board.enlarged !== device.id}
-          interactive={!board.editing}
+          visible={board.active && board.enlarged !== device.id}
+          interactive={board.active && !board.editing}
         />
         {board.enlarged !== device.id && (
           <button
@@ -243,9 +248,9 @@ export function KVMWall({
 }) {
   const { store } = useConsoleSessions();
   const [initial] = useState(() => readWallPreferences(devices));
-  const [value, setValue] = useState(initial.value),
+  const [savedValue, setValue] = useState(initial.value),
     [warning, setWarning] = useState(initial.warning || "");
-  const current = useRef(value),
+  const current = useRef(savedValue),
     gridRef = useRef<GridStackHandle>(null),
     container = useRef<HTMLDivElement>(null),
     expanded = useRef<HTMLElement>(null);
@@ -265,8 +270,55 @@ export function KVMWall({
   });
   const enteredConsoles = useRef(false);
   const [size, setSize] = useState({ width: 1000, height: 700 });
+  const { controller, draft } = useDashboardSurface(
+    {
+      target: wallStorageKey,
+      title: "KVM Wall",
+      mode: "wall",
+      layout: wallDashboard(
+        savedValue.automatic
+          ? {
+              ...savedValue,
+              entries: fitWall(savedValue.entries, size.width, size.height)
+                .entries,
+            }
+          : savedValue,
+      ),
+      catalog: (["jetkvm", "vnc", "glinet"] as const).map((kind) => ({
+        kind,
+        ...wallLimits(kind),
+      })),
+      read: () => localStorage.getItem(wallStorageKey),
+      save: (layout) => {
+        const next = applyWallDashboard(savedValue, layout),
+          error = writeWallPreferences(next);
+        if (error) throw Error(error);
+        current.current = next;
+        setValue(next);
+      },
+    },
+    wallTab === "Consoles",
+  );
+  const value = draft
+    ? applyWallDashboard(
+        savedValue,
+        draft.showCurrent ? draft.baseline : draft.layout,
+      )
+    : savedValue;
+  const previewing = !!draft;
+  const draftGeometry = draft ? JSON.stringify(value.entries) : "";
+  useEffect(() => {
+    current.current = value;
+  }, [value]);
+  useEffect(() => {
+    if (previewing) {
+      store.setControl(null);
+      setEnlarged(null);
+    }
+  }, [store, previewing]);
   const [options] = useState<GridStackOptions>(() => ({
     column: 12,
+    float: true,
     cellHeight: 80,
     margin: 8,
     animate: false,
@@ -280,7 +332,7 @@ export function KVMWall({
     store.setControl(null);
   }, [store]);
   useEffect(() => {
-    if (wallTab !== "Consoles" || enteredConsoles.current) return;
+    if (wallTab !== "Consoles" || enteredConsoles.current || previewing) return;
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
@@ -301,7 +353,7 @@ export function KVMWall({
     return () => {
       cancelled = true;
     };
-  }, [store, wallTab, devices]);
+  }, [store, wallTab, devices, previewing]);
   useEffect(() => {
     const element = container.current;
     if (!element) return;
@@ -329,11 +381,13 @@ export function KVMWall({
       window.removeEventListener("resize", update);
     };
   }, []);
+  const canEdit =
+    editing && !narrow && !draft?.showCurrent && !controller?.busy;
   useEffect(() => {
     const grid = gridRef.current?.getGrid();
-    grid?.enableMove(editing && !narrow);
-    grid?.enableResize(editing && !narrow);
-  }, [editing, narrow]);
+    grid?.enableMove(canEdit);
+    grid?.enableResize(canEdit);
+  }, [canEdit]);
   const fitted = fitWall(value.entries, size.width, size.height);
   // Manual layouts must not reload during drag-induced scrolling or height changes.
   const fitWidth = value.automatic ? size.width : 0;
@@ -366,6 +420,7 @@ export function KVMWall({
     narrow,
     fitWidth,
     fitHeight,
+    draftGeometry,
   ]);
   const selected = value.entries.find((e) => e.deviceId === enlarged);
   const selectedKey = selected
@@ -394,6 +449,11 @@ export function KVMWall({
     };
   }, [store, selectedKey]);
   function save(next: WallPreferences) {
+    if (draft) {
+      if (!controller?.busy && !draft.showCurrent)
+        controller?.store.edit(wallStorageKey, wallDashboard(next));
+      return;
+    }
     current.current = next;
     setValue(next);
     setWarning(writeWallPreferences(next));
@@ -464,6 +524,7 @@ export function KVMWall({
       className="wall-settings"
       aria-label="Wall settings"
       hidden={wallTab !== "Settings"}
+      inert={!!draft}
     >
       <div className="wall-settings-actions">
         <button onClick={() => setAll("manual")}>Set all to manual</button>
@@ -561,10 +622,11 @@ export function KVMWall({
   return (
     <BoardContext.Provider
       value={{
+        active: wallTab === "Consoles",
         devices,
         displays,
         value,
-        editing,
+        editing: editing || !!draft,
         narrow,
         enlarged,
         enlarge: setEnlarged,
@@ -604,6 +666,7 @@ export function KVMWall({
           {wallTab === "Consoles" && (
             <div className="dashboard-actions">
               <button
+                disabled={!!draft}
                 onClick={() =>
                   value.entries
                     .filter((entry) => entry.included)
@@ -638,6 +701,7 @@ export function KVMWall({
             </div>
           )}
         </header>
+        {wallTab === "Consoles" && <DashboardPreview target={wallStorageKey} />}
         {(wallTab === "Power Overview" || wallTab === "Central Dashboard") && (
           <Suspense fallback={<p role="status">Loading telemetry…</p>}>
             <FleetTelemetry

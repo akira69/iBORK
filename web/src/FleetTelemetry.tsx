@@ -2,17 +2,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { DashboardGrid, type ScopedWidget } from "./DashboardGrid";
 import { catalog, validDashboardSensorId } from "./dashboard-layout";
-import type { Device, Display } from "./device-identity";
+import { sourcesFor, type Device, type Display } from "./device-identity";
 import type { PowerHistory } from "./energy";
 import {
-  fleetHistory,
   fleetPower,
   sampleStatus,
   type FleetReading,
   type FleetReadings,
 } from "./fleet-power";
-import { useElectricityRate } from "./ElectricityRate";
-import { sensorReading, type Sensor } from "./sensors";
+import { FleetHistory } from "./FleetHistory";
+import { ScopedKVM } from "./ScopedKVM";
+import { SensorReadings } from "./SensorReadings";
+import { sensorGroup, type Sensor } from "./sensors";
 import { usePoll } from "./usePoll";
 import "./FleetTelemetry.css";
 
@@ -61,7 +62,7 @@ function SensorFeed({
 function Current({ ids, readings, elapsed }: Group) {
   const { watts, reporting, total } = fleetPower(ids, readings, elapsed);
   return (
-    <div className="compact-power">
+    <div className="fleet-current">
       <strong>{fmtWatts(watts)}</strong>
       <small>
         {reporting} of {total} reporting
@@ -69,85 +70,6 @@ function Current({ ids, readings, elapsed }: Group) {
     </div>
   );
 }
-function History({ ids, readings, elapsed }: Group) {
-  const hour = 3600,
-    minute = Math.floor(elapsed / 60000) * 60000;
-  const { lines, start, coveredSeconds, kwh } = useMemo(
-    () => fleetHistory(ids, readings, hour, minute),
-    [ids, readings, minute],
-  );
-  const { rate } = useElectricityRate();
-  const peak = lines.reduce(
-    (highest, line) => line.reduce((v, p) => Math.max(v, p.watts), highest),
-    0,
-  );
-  return (
-    <div className="fleet-history">
-      {coveredSeconds > 0 ? (
-        <>
-          <svg
-            viewBox="0 0 320 100"
-            role="img"
-            aria-label={`Combined watts over the last hour, peak ${fmtWatts(peak)}`}
-          >
-            <path className="fleet-axis" d="M42 5V76H318" />
-            <text x="0" y="12">
-              {fmtWatts(peak)}
-            </text>
-            <text x="0" y="76">
-              0 W
-            </text>
-            <text x="42" y="94">
-              −60 min
-            </text>
-            <text x="318" y="94" textAnchor="end">
-              Now
-            </text>
-            {lines.map((line) => (
-              <polyline
-                key={line[0].at}
-                points={line
-                  .map(
-                    (p) =>
-                      `${42 + (276 * (p.at - start)) / hour},${76 - (72 * p.watts) / Math.max(1, peak)}`,
-                  )
-                  .join(" ")}
-              />
-            ))}
-          </svg>
-          <strong>
-            {kwh.toFixed(4)} kWh
-            {rate !== null && ` · $${(kwh * rate).toFixed(2)}`}
-          </strong>
-        </>
-      ) : (
-        <strong>Unavailable</strong>
-      )}
-      <small>
-        Last hour · {((100 * coveredSeconds) / hour).toFixed(1)}% common
-        coverage
-      </small>
-    </div>
-  );
-}
-
-function SensorWidget({
-  result,
-  sensorId,
-}: {
-  result?: SensorResult;
-  sensorId?: string;
-}) {
-  const sensor = result?.data?.find((s) => s.id === sensorId);
-  return (
-    <div className="compact-power">
-      <p>{sensor?.name ?? sensorId}</p>
-      <strong>{sensor ? sensorReading(sensor) : "Unavailable"}</strong>
-      {result?.error && <small>{result.error}</small>}
-    </div>
-  );
-}
-
 function FleetCatalog({
   devices,
   name,
@@ -168,6 +90,15 @@ function FleetCatalog({
   const [members, setMembers] = useState<string[]>([]),
     [metric, setMetric] = useState("");
   const selected = devices.find((d) => d.id === source);
+  const availableSensors = (sensors?.data ?? []).filter((s) =>
+    validDashboardSensorId(s.id),
+  );
+  const cpuTemperatures = availableSensors.filter(
+    (s) =>
+      sensorGroup(s) === "sensor-cpu" &&
+      ["degrees C", "degrees F", "°C", "°F"].includes(s.unit),
+  );
+  const fans = availableSensors.filter((s) => s.unit === "RPM");
   const options = [
     ...(!selected || hasEnergy(selected)
       ? (["power-now", "power-hour"] as const).map((value) => ({
@@ -176,12 +107,24 @@ function FleetCatalog({
         }))
       : []),
     ...(selected && hasSensors(selected)
-      ? (sensors?.data ?? [])
-          .filter((s) => validDashboardSensorId(s.id))
-          .map((s) => ({
+      ? [
+          ...(cpuTemperatures.length
+            ? [{ value: "cpu-temperatures", label: "CPU temperatures" }]
+            : []),
+          ...(fans.length
+            ? [{ value: "highest-fan", label: "Highest fan RPM" }]
+            : []),
+          ...availableSensors.map((s) => ({
             value: `sensor:${s.id}`,
             label: s.name,
-          }))
+          })),
+        ]
+      : []),
+    ...(selected
+      ? sourcesFor(selected).map((value) => ({
+          value,
+          label: catalog[value].title,
+        }))
       : []),
   ];
   const active =
@@ -206,7 +149,9 @@ function FleetCatalog({
         >
           <option value="">Combined power</option>
           {devices
-            .filter((d) => hasEnergy(d) || hasSensors(d))
+            .filter(
+              (d) => hasEnergy(d) || hasSensors(d) || sourcesFor(d).length,
+            )
             .map((d) => (
               <option value={d.id} key={d.id}>
                 {name(d.id)}
@@ -260,6 +205,23 @@ function FleetCatalog({
             add({ kind: active, deviceIds: ids });
           else if (active?.startsWith("sensor:"))
             add({ kind: "sensor", deviceIds: ids, sensorId: active.slice(7) });
+          else if (active === "cpu-temperatures" || active === "highest-fan")
+            add({
+              kind: "sensor",
+              deviceIds: ids,
+              sensorIds: (active === "highest-fan" ? fans : cpuTemperatures)
+                .slice(0, 64)
+                .map((s) => s.id),
+              title:
+                active === "highest-fan" ? "Highest fan" : "CPU temperatures",
+              ...(active === "highest-fan" ? { aggregate: "max" } : {}),
+            });
+          else if (
+            active === "jetkvm" ||
+            active === "vnc" ||
+            active === "glinet"
+          )
+            add({ kind: active, deviceIds: ids });
         }}
       >
         <Plus size={16} />
@@ -296,6 +258,9 @@ export function FleetTelemetry({
       : `Removed server (${id})`;
   };
   const group = { ids, readings, elapsed };
+  const names = Object.fromEntries(
+    devices.map((device) => [device.id, name(device.id)]),
+  );
   const energyFeeds = (members: string[]) =>
     devices
       .filter((device) => hasEnergy(device) && members.includes(device.id))
@@ -303,76 +268,112 @@ export function FleetTelemetry({
         <EnergyFeed key={device.id} id={device.id} report={report} />
       ));
   return (
-    <>
-      {view === "Central Dashboard" ? (
-        <DashboardGrid
-          storageKey="ibork:fleet-dashboard:v1"
-          fleet={{
-            title: (w) =>
-              `${w.deviceIds!.map(name).join(" + ")} · ${catalog[w.kind].title}`,
-            feeds: (widgets, editing) => {
-              const powered = widgets
-                .filter((w) => w.kind !== "sensor")
-                .flatMap((w) => w.deviceIds!);
-              const watched = new Set(
-                widgets
-                  .filter((w) => w.kind === "sensor")
-                  .map((w) => w.deviceIds![0]),
-              );
-              if (editing) watched.add(source);
-              return (
-                <>
-                  {energyFeeds(powered)}
-                  {devices
-                    .filter((d) => watched.has(d.id) && hasSensors(d))
-                    .map((d) => (
-                      <SensorFeed key={d.id} id={d.id} report={reportSensors} />
-                    ))}
-                </>
-              );
-            },
-            catalog: (add, count) => (
-              <FleetCatalog
-                devices={devices}
-                name={name}
-                source={source}
-                setSource={setSource}
-                sensors={sensors.get(source)}
-                add={add}
-                count={count}
-              />
-            ),
-          }}
-          renderWidget={(w) => {
-            const members = w.deviceIds!;
-            if (w.kind === "sensor") {
-              const device = devices.find((d) => d.id === members[0]);
-              return (
-                <SensorWidget
-                  result={
-                    device && hasSensors(device)
-                      ? sensors.get(device.id)
-                      : undefined
-                  }
-                  sensorId={w.sensorId}
-                />
-              );
-            }
-            return w.kind === "power-hour" ? (
-              <History {...group} ids={members} />
-            ) : (
-              <Current {...group} ids={members} />
+    <section aria-label={view}>
+      <DashboardGrid
+        key={view}
+        dashboardTitle={view}
+        storageKey={
+          view === "Central Dashboard"
+            ? "ibork:fleet-dashboard:v1"
+            : "ibork:power-overview:v1"
+        }
+        initialLayout={
+          view === "Power Overview"
+            ? {
+                version: 1,
+                widgets: [
+                  {
+                    id: "fleet-current",
+                    kind: "power-now",
+                    deviceIds: ids,
+                    title: "Current measured power",
+                    x: 0,
+                    y: 0,
+                    w: 4,
+                    h: 1,
+                  },
+                  {
+                    id: "fleet-hour",
+                    kind: "power-hour",
+                    deviceIds: ids,
+                    x: 4,
+                    y: 0,
+                    w: 8,
+                    h: 4,
+                  },
+                ],
+              }
+            : undefined
+        }
+        fleet={{
+          title: (w) =>
+            `${w.deviceIds!.map(name).join(" + ")} · ${w.title || catalog[w.kind].title}`,
+          feeds: (widgets, editing) => {
+            const powered = widgets
+              .filter((w) => w.kind === "power-now" || w.kind === "power-hour")
+              .flatMap((w) => w.deviceIds!);
+            const watched = new Set(
+              widgets
+                .filter((w) => w.kind === "sensor")
+                .map((w) => w.deviceIds![0]),
             );
-          }}
-        />
-      ) : (
+            if (editing) watched.add(source);
+            return (
+              <>
+                {view === "Central Dashboard" && energyFeeds(powered)}
+                {devices
+                  .filter((d) => watched.has(d.id) && hasSensors(d))
+                  .map((d) => (
+                    <SensorFeed key={d.id} id={d.id} report={reportSensors} />
+                  ))}
+              </>
+            );
+          },
+          catalog: (add, count) => (
+            <FleetCatalog
+              devices={devices}
+              name={name}
+              source={source}
+              setSource={setSource}
+              sensors={sensors.get(source)}
+              add={add}
+              count={count}
+            />
+          ),
+        }}
+        renderWidget={(w, editing) => {
+          const members = w.deviceIds!;
+          const device = devices.find((d) => d.id === members[0]);
+          if (w.kind === "jetkvm" || w.kind === "vnc" || w.kind === "glinet")
+            return (
+              <ScopedKVM device={device} kind={w.kind} editing={editing} />
+            );
+          if (w.kind === "sensor") {
+            const result =
+              device && hasSensors(device) ? sensors.get(device.id) : undefined;
+            return (
+              <SensorReadings
+                widget={w}
+                sensors={result?.data}
+                error={result?.error}
+                editing={editing}
+              />
+            );
+          }
+          return w.kind === "power-hour" ? (
+            <FleetHistory {...group} ids={members} names={names} />
+          ) : (
+            <Current {...group} ids={members} />
+          );
+        }}
+      />
+      {view === "Power Overview" && (
         <section
           className="panel data-panel fleet-overview"
-          aria-label="Power Overview"
+          aria-label="Power sources"
         >
           {energyFeeds(ids)}
           <h2>Measured power</h2>
-          <Current {...group} />
           <table>
             <thead>
               <tr>
@@ -405,10 +406,8 @@ export function FleetTelemetry({
               })}
             </tbody>
           </table>
-          <h3>All servers · last hour</h3>
-          <History {...group} />
         </section>
       )}
-    </>
+    </section>
   );
 }
