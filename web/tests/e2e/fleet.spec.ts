@@ -31,7 +31,12 @@ async function fleet(page: Page) {
       hasJetKVM: false,
     },
   ];
-  const state = { devices, failed: false, consoleRequests: 0 };
+  const state = {
+    devices,
+    failed: false,
+    consoleRequests: 0,
+    energyRequests: 0,
+  };
   await page.route("**/api/devices", (route) =>
     route.fulfill({ json: state.devices }),
   );
@@ -40,6 +45,7 @@ async function fleet(page: Page) {
     return route.fulfill({ status: 503, json: { error: "fixture" } });
   });
   await page.route("**/api/devices/*/energy", (route) => {
+    state.energyRequests++;
     const second = route.request().url().includes("rack-b");
     if (second && state.failed)
       return route.fulfill({ status: 504, json: { error: "Read timed out" } });
@@ -94,8 +100,13 @@ test("Power Overview restores without connecting consoles and reports partial fa
     name: "Power Overview",
     exact: true,
   });
-  await expect(overview.getByText("200 W", { exact: true })).toBeVisible();
-  await expect(overview.getByText("2 of 3 reporting")).toBeVisible();
+  await expect(
+    overview.locator(".fleet-current").getByText("200 W", { exact: true }),
+  ).toBeVisible();
+  expect(state.energyRequests).toBe(2);
+  await expect(
+    overview.locator(".fleet-current").getByText("2 of 3 reporting"),
+  ).toBeVisible();
   await expect(
     overview.getByRole("row", { name: /Demo sensor/ }),
   ).toContainText("No power source");
@@ -112,7 +123,9 @@ test("Power Overview restores without connecting consoles and reports partial fa
   await expect(overview.getByRole("row", { name: /Rack B/ })).toContainText(
     "Collection: Read timed out",
   );
-  await expect(overview.getByText("1 of 3 reporting")).toBeVisible();
+  await expect(
+    overview.locator(".fleet-current").getByText("1 of 3 reporting"),
+  ).toBeVisible();
   expect(state.consoleRequests).toBe(0);
   await page.getByRole("button", { name: "Consoles", exact: true }).click();
   await expect.poll(() => state.consoleRequests).toBe(1);
@@ -144,7 +157,7 @@ test("Central Dashboard persists overlapping groups, sensor, keyboard geometry a
     name: "Rack A + Rack B · Last hour widget",
   });
   await expect(
-    chart.getByRole("img", { name: /Combined watts/ }),
+    chart.getByRole("img", { name: /Available measured watts/ }),
   ).toBeVisible();
   await expect(chart.getByText(/0.0033 kWh/)).toBeVisible();
   await page.route("**/api/electricity-rate", (route) =>
@@ -153,7 +166,9 @@ test("Central Dashboard persists overlapping groups, sensor, keyboard geometry a
   await page.evaluate(() =>
     document.dispatchEvent(new Event("visibilitychange")),
   );
-  await expect(chart.getByText("0.0033 kWh · $0.10")).toBeVisible();
+  await expect(
+    chart.getByText("Cost of recorded energy · Partial: $0.10"),
+  ).toBeVisible();
   await page.route("**/devices/probe/sensors", (route) =>
     route.fulfill({
       json: [
@@ -201,7 +216,7 @@ test("Central Dashboard persists overlapping groups, sensor, keyboard geometry a
   await expect(remaining.getByText("80 W")).toBeVisible();
   await expect(remaining.getByText("1 of 2 reporting")).toBeVisible();
   await expect(
-    dashboard.getByText("Last hour · 0.0% common coverage"),
+    dashboard.getByText("Last hour · 0.8% measured coverage"),
   ).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect
@@ -240,6 +255,56 @@ test("an empty Central Dashboard does not download fleet power histories", async
       .filter({ visible: true }),
   ).toBeVisible();
   expect(polls).toBe(0);
+});
+
+test("Central Dashboard adds a KVM without connecting until explicitly requested", async ({
+  page,
+}) => {
+  const state = await fleet(page);
+  await page
+    .getByRole("button", { name: "Central Dashboard", exact: true })
+    .click();
+  const dashboard = page.getByRole("region", {
+    name: "Central Dashboard",
+    exact: true,
+  });
+  await dashboard
+    .getByRole("button", { name: "Edit layout", exact: true })
+    .click();
+  await dashboard
+    .getByRole("combobox", { name: "Source", exact: true })
+    .selectOption("default");
+  await dashboard
+    .getByRole("combobox", { name: "Metric", exact: true })
+    .selectOption("vnc");
+  await dashboard
+    .getByRole("button", { name: "Add widget", exact: true })
+    .click();
+  await expect(
+    dashboard.getByText("Console controls are disabled while editing."),
+  ).toBeVisible();
+  await dashboard
+    .getByRole("button", { name: "Add widget", exact: true })
+    .click();
+  await expect(
+    dashboard.getByText("This console is already on the dashboard."),
+  ).toBeVisible();
+  await expect(dashboard.locator(".grid-stack-item")).toHaveCount(1);
+  expect(state.consoleRequests).toBe(0);
+  await dashboard.getByRole("button", { name: "Done", exact: true }).click();
+  expect(state.consoleRequests).toBe(0);
+  await dashboard.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect.poll(() => state.consoleRequests).toBe(1);
+  const surface = '[data-console-key="default:vnc"]';
+  await expect(dashboard.locator(surface)).toHaveCount(1);
+  await page.getByRole("button", { name: "Consoles", exact: true }).click();
+  await expect(page.locator(`.wall-grid ${surface}`)).toHaveCount(1);
+  await page
+    .getByRole("button", { name: "Central Dashboard", exact: true })
+    .click();
+  await expect(dashboard.locator(surface)).toHaveCount(1);
+  await page.getByRole("button", { name: "Consoles", exact: true }).click();
+  await expect(page.locator(`.wall-grid ${surface}`)).toHaveCount(1);
 });
 
 test("server watts and projections expire while the next poll is pending", async ({

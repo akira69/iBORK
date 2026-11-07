@@ -41,9 +41,11 @@ import { usePoll } from "./usePoll";
 import { type JetKVMProvider, type KVMState } from "./kvm";
 import { KVMWall } from "./KVMWall";
 import { DashboardGrid } from "./DashboardGrid";
+import { DashboardAssistant, DashboardScope } from "./DashboardAssistant";
+import { SensorReadings } from "./SensorReadings";
 import { SensorGroups } from "./SensorGroups";
 import { panelLayout, powerLayout, terminalLayout } from "./page-layouts";
-import { selectedSensors, type WidgetKind } from "./dashboard-layout";
+import { type WidgetKind } from "./dashboard-layout";
 import { sensorReading, powerSupplies, type Sensor } from "./sensors";
 import { ConnectionSettings } from "./ConnectionSettings";
 import { Information } from "./Information";
@@ -307,22 +309,24 @@ export function App() {
       >
         {(workspace) => (
           <ConsoleSessions devices={workspace.devices} csrf={csrf}>
-            <FleetDashboard
-              workspace={workspace}
-              csrf={csrf}
-              passwordChanged={() => {
-                setCSRF(null);
-                setError("Password changed. Sign in with your new password.");
-              }}
-              logout={async () => {
-                await api("logout", {
-                  method: "POST",
-                  headers: { "X-CSRF-Token": csrf },
-                  body: "{}",
-                });
-                setCSRF(null);
-              }}
-            />
+            <DashboardAssistant devices={workspace.devices} csrf={csrf}>
+              <FleetDashboard
+                workspace={workspace}
+                csrf={csrf}
+                passwordChanged={() => {
+                  setCSRF(null);
+                  setError("Password changed. Sign in with your new password.");
+                }}
+                logout={async () => {
+                  await api("logout", {
+                    method: "POST",
+                    headers: { "X-CSRF-Token": csrf },
+                    body: "{}",
+                  });
+                  setCSRF(null);
+                }}
+              />
+            </DashboardAssistant>
           </ConsoleSessions>
         )}
       </DeviceWorkspace>
@@ -918,559 +922,552 @@ function Dashboard({
             }}
           />
         )}
-        <main className="main" hidden={view === "wall"}>
-          <nav className="tabs" aria-label="Management views" hidden={appPage}>
-            {tabs
-              .filter((name) => supportsTab(device, name))
-              .map((name) => (
-                <button
-                  aria-current={tab === name ? "page" : undefined}
-                  className={tab === name ? "active" : ""}
-                  key={name}
-                  onClick={() => {
-                    setTab(name);
-                    if (name === "Terminals") setTerminalVisited(true);
-                  }}
-                >
-                  {name}
-                </button>
-              ))}
-            <span className="tabs-end">
-              <ShieldCheck size={14} />
-              Private session
-            </span>
-          </nav>
-          <Notice message={feedback} />
-          <Notice message={config.error} />
-          <div hidden={tab !== "Console"}>
-            {config.data && (
-              <DashboardGrid
-                active={view === "server" && tab === "Console"}
-                toolbarTarget={toolbarTarget}
-                jetAvailable={device.hasJetKVM}
-                vncAvailable={device.hasVNC}
-                cometAvailable={hasComet}
-                managementAvailable={hasManagement}
-                key={endpointKey + ":" + dashboardVersion}
-                storageKey={dashboardKey(device)}
-                onKindsChange={setWidgetKinds}
-                sensors={sensors.data ?? []}
-                onEditStart={() => consoleStore.setControl(null)}
-                beforeRemove={(widget) => {
-                  if (
-                    widget.kind === "jetkvm" ||
-                    widget.kind === "vnc" ||
-                    widget.kind === "glinet"
-                  )
-                    consoleStore.disconnect(`${device.id}:${widget.kind}`);
-                }}
-                renderWidget={(widget, editing) => {
-                  if (
-                    ["fans", "temperatures", "psu", "alerts"].includes(
-                      widget.kind,
-                    )
-                  )
-                    return (
-                      <SensorOverview
-                        kind={
-                          widget.kind as
-                            "fans" | "temperatures" | "psu" | "alerts"
-                        }
-                        sensors={
-                          sensors.data?.filter(
-                            (sensor) => !sensor.detailOnly,
-                          ) ?? []
-                        }
-                        error={sensors.error}
-                        loading={sensors.loading}
-                      />
-                    );
-                  if (widget.kind === "events")
-                    return (
-                      <RecentEvents
-                        events={events.data ?? []}
-                        error={events.error}
-                        loading={events.loading}
-                      />
-                    );
-                  if (widget.kind === "inventory")
-                    return (
-                      <InventoryOverview
-                        inventory={inventory.data}
-                        error={inventory.error}
-                        loading={inventory.loading}
-                      />
-                    );
-                  if (widget.kind === "connections")
-                    return (
-                      <ConnectionOverview
-                        connections={[
-                          {
-                            name: "IPMI",
-                            status: bmcOnline
-                              ? "Online"
-                              : power.loading
-                                ? "Checking"
-                                : "Offline",
-                            detail: `${device.bmcHost}:${device.bmcPort}`,
-                          },
-                          ...(device.hasJetKVM
-                            ? [
-                                {
-                                  name: "JetKVM",
-                                  status: state,
-                                  detail: config.data?.jetUrl,
-                                },
-                              ]
-                            : []),
-                          ...(hasComet
-                            ? [
-                                {
-                                  name: "GL.iNet Comet",
-                                  status: cometSnapshot.phase,
-                                  detail: config.data?.glUrl,
-                                },
-                              ]
-                            : []),
-                          ...(device.hasVNC
-                            ? [
-                                {
-                                  name: "VNC",
-                                  status: vncStatus,
-                                  detail: config.data?.vncHost,
-                                },
-                              ]
-                            : []),
-                        ]}
-                      />
-                    );
-                  if (widget.kind === "cooling") return coolingPanel;
-                  if (widget.kind === "boot") return bootPanel;
-                  if (widget.kind === "media")
-                    return (
-                      <section className="panel data-panel">
-                        {mediaPanel}
-                      </section>
-                    );
-                  if (widget.kind === "vnc" || widget.kind === "glinet")
-                    return (
-                      <ConsoleSlot
-                        sessionKey={`${device.id}:${widget.kind}`}
-                        visible={view === "server" && tab === "Console"}
-                        interactive={!editing}
-                      />
-                    );
-                  if (widget.kind === "sol")
-                    return (
-                      <SerialConsole
-                        apiPrefix={apiPrefix}
-                        active={!editing && tab === "Console"}
-                      />
-                    );
-                  if (widget.kind === "diagnostics")
-                    return (
-                      <DiagnosticsTerminal
-                        apiPrefix={apiPrefix}
-                        csrf={csrf}
-                        active={!editing && tab === "Console"}
-                      />
-                    );
-                  if (
-                    widget.kind === "power-now" ||
-                    widget.kind === "energy-cost"
-                  )
-                    return <PowerUsage history={history} mode={widget.kind} />;
-                  if (widget.kind === "jetkvm")
-                    return (
-                      <ConsoleSlot
-                        sessionKey={`${device.id}:jetkvm`}
-                        visible={view === "server" && tab === "Console"}
-                        interactive={!editing}
-                      />
-                    );
-                  if (widget.kind === "power-control")
-                    return (
-                      <section className="panel power-panel">
-                        <div className="section-title">
-                          <Power size={17} />
-                          <h2>Power control</h2>
-                          <Badge state={bmcOnline ? "ok" : "unavailable"}>
-                            {power.data?.state ?? "Unknown"}
-                          </Badge>
-                        </div>
-                        <p>Manage the server through IPMI.</p>
-                        <div className="power-buttons">
-                          {actions.map((action) => (
-                            <button
-                              key={action.id}
-                              disabled={!bmcOnline || busy}
-                              className={
-                                action.id === "off" ? "danger-text" : ""
-                              }
-                              onClick={() =>
-                                control(
-                                  "power",
-                                  action.id,
-                                  action.name,
-                                  action.id === "on"
-                                    ? "Power on this server?"
-                                    : "This can interrupt running workloads. Unsaved data may be lost. Proceed only when the server is ready.",
-                                )
-                              }
-                            >
-                              <Power size={14} />
-                              {action.name}
-                              <span>↗</span>
-                            </button>
-                          ))}
-                        </div>
-                        <Notice message={power.error} />
-                      </section>
-                    );
-                  if (widget.kind === "health")
-                    return (
-                      <section className="panel health-panel">
-                        {[
-                          {
-                            icon: Thermometer,
-                            label: "CPU temperature",
-                            sensor: temp,
-                          },
-                          { icon: Wind, label: "Fan speed", sensor: fan },
-                          ...(supplies.length
-                            ? supplies.map((sensor) => ({
-                                icon: Zap,
-                                label: sensor.name,
-                                sensor,
-                              }))
-                            : [
-                                {
-                                  icon: Zap,
-                                  label: "Power supply",
-                                  sensor: undefined,
-                                },
-                              ]),
-                        ].map(({ icon: Icon, label, sensor }) => (
-                          <div className="metric" key={label}>
-                            <Icon size={17} />
-                            <span>{label}</span>
-                            <strong
-                              className={
-                                sensors.error ? "unavailable" : sensor?.state
-                              }
-                            >
-                              {sensors.error
-                                ? "Unavailable"
-                                : sensor
-                                  ? sensorReading(sensor)
-                                  : sensors.loading
-                                    ? "Loading…"
-                                    : "Not reported"}
-                            </strong>
-                            {sensor && (
-                              <span className="sr-only">
-                                {sensors.error ? "Unavailable" : sensor.state}
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                        <p className="small-note">
-                          {sensors.error
-                            ? "Sensor readings unavailable"
-                            : "Readings refresh every 20 seconds"}
-                        </p>
-                      </section>
-                    );
-                  if (widget.kind === "power-usage")
-                    return tab === "Console" ? (
-                      <PowerUsage history={history} />
-                    ) : null;
-                  if (
-                    widget.kind === "power-hour" ||
-                    widget.kind === "power-day" ||
-                    widget.kind === "power-week" ||
-                    widget.kind === "power-statistics" ||
-                    widget.kind === "power-projections"
-                  )
-                    return (
-                      <PowerUsage
-                        history={history}
-                        mode={
-                          widget.kind.slice(6) as
-                            | "hour"
-                            | "day"
-                            | "week"
-                            | "statistics"
-                            | "projections"
-                        }
-                      />
-                    );
-                  const selected = selectedSensors(widget);
-                  return (
-                    <div
-                      className={`sensor-readings ${selected.length === 1 ? "single" : ""}`}
-                    >
-                      {!selected.length && (
-                        <p className="empty-data">
-                          {editing
-                            ? "Choose readings for this widget."
-                            : "Edit layout to choose readings."}
-                        </p>
-                      )}
-                      {selected.map((id) => {
-                        const sensor = sensors.data?.find((s) => s.id === id);
-                        const status =
-                          sensors.error || !sensor
-                            ? "unavailable"
-                            : sensor.state;
-                        return (
-                          <article
-                            className={`sensor-reading ${status}`}
-                            key={id}
-                          >
-                            <p>{sensor?.name ?? "Sensor unavailable"}</p>
-                            <strong>
-                              {sensors.error || !sensor
-                                ? "Unavailable"
-                                : sensorReading(sensor)}
-                            </strong>
-                            <Badge state={status}>
-                              {status === "ok" ? "OK" : status}
-                            </Badge>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  );
-                }}
-              />
-            )}
-          </div>
-          {tab === "Power usage" && (
-            <DashboardGrid
-              fixedLayout={powerLayout}
-              storageKey={pageStorage + "power"}
-              toolbarTarget={toolbarTarget}
-              renderWidget={(widget) => (
-                <PowerUsage
-                  history={history}
-                  mode={
-                    widget.kind.slice(6) as
-                      "statistics" | "hour" | "day" | "week" | "projections"
-                  }
-                />
-              )}
-            />
-          )}
-          {tab === "Cooling" && (
-            <DashboardGrid
-              fixedLayout={panelLayout([["cooling", 0, 0, 5, 3]])}
-              storageKey={pageStorage + "cooling"}
-              toolbarTarget={toolbarTarget}
-              renderWidget={() => coolingPanel}
-            />
-          )}
-          {terminalVisited && (
-            <section className="terminal-area" hidden={tab !== "Terminals"}>
-              <DashboardGrid
-                fixedLayout={terminalLayout}
-                storageKey={pageStorage + "terminals"}
-                toolbarTarget={toolbarTarget}
-                active={tab === "Terminals"}
-                renderWidget={(widget, editing) =>
-                  widget.kind === "sol" ? (
-                    hasSOLWidget ? (
-                      <button onClick={() => openTerminalWidget("sol")}>
-                        Open serial console widget
-                      </button>
-                    ) : (
-                      <SerialConsole
-                        apiPrefix={apiPrefix}
-                        active={tab === "Terminals" && !editing}
-                      />
-                    )
-                  ) : hasDiagnosticsWidget ? (
-                    <button onClick={() => openTerminalWidget("diagnostics")}>
-                      Open diagnostics widget
-                    </button>
-                  ) : (
-                    <DiagnosticsTerminal
-                      apiPrefix={apiPrefix}
-                      csrf={csrf}
-                      active={tab === "Terminals" && !editing}
-                    />
-                  )
-                }
-              />
-            </section>
-          )}
-          {tab === "Sensors" && (
-            <SensorGroups
-              sensors={sensors.data}
-              error={sensors.error}
-              loading={sensors.loading}
-              storageKey={pageStorage + "sensors"}
-              toolbarTarget={toolbarTarget}
-              refresh={() => setRevision((v) => v + 1)}
-            />
-          )}
-          {tab === "Events" && (
-            <DashboardGrid
-              fixedLayout={panelLayout([["events", 0, 0, 9, 6]])}
-              storageKey={pageStorage + "events"}
-              toolbarTarget={toolbarTarget}
-              renderWidget={() => (
-                <section className="panel data-panel">
-                  <PanelHeading
-                    title="System event log"
-                    detail="Events reported by the BMC; unknown severity is left unclassified"
-                    refresh={() => setRevision((v) => v + 1)}
-                  />
-                  <Notice message={events.error} />
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Time</th>
-                        <th>Sensor</th>
-                        <th>Event</th>
-                        <th>State</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {events.data?.map((event) => (
-                        <tr key={event.id}>
-                          <td className="mono">{event.timestamp}</td>
-                          <td>{event.sensor}</td>
-                          <td>{event.message}</td>
-                          <td>
-                            <Badge state={event.state}>{event.state}</Badge>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {!events.data?.length && (
-                    <Empty loading={events.loading} noun="events" />
-                  )}
+        <DashboardScope.Provider
+          value={{
+            deviceId: device.id,
+            title: `${device.name} · ${tab}`,
+            active: view === "server",
+          }}
+        >
+          <main className="main" hidden={view === "wall"}>
+            <nav
+              className="tabs"
+              aria-label="Management views"
+              hidden={appPage}
+            >
+              {tabs
+                .filter((name) => supportsTab(device, name))
+                .map((name) => (
                   <button
-                    className="danger-text"
-                    disabled={!bmcOnline}
-                    onClick={() =>
-                      control(
-                        "events/clear",
-                        "clear",
-                        "Clear system event log",
-                        "This permanently erases the BMC event log. Export any required records first.",
-                      )
-                    }
+                    aria-current={tab === name ? "page" : undefined}
+                    className={tab === name ? "active" : ""}
+                    key={name}
+                    onClick={() => {
+                      setTab(name);
+                      if (name === "Terminals") setTerminalVisited(true);
+                    }}
                   >
-                    Clear event log
+                    {name}
                   </button>
-                </section>
-              )}
-            />
-          )}
-          {tab === "Inventory" && (
-            <DashboardGrid
-              fixedLayout={panelLayout([["inventory", 0, 0, 7, 6]])}
-              storageKey={pageStorage + "inventory"}
-              toolbarTarget={toolbarTarget}
-              renderWidget={() => (
-                <section className="panel data-panel">
-                  <PanelHeading
-                    title="System inventory & FRU"
-                    detail="Manufacturer, board, chassis and controller information"
-                    refresh={() => setRevision((v) => v + 1)}
-                  />
-                  <Notice message={inventory.error} />
-                  <dl className="inventory">
-                    {Object.entries(inventory.data?.fields ?? {}).map(
-                      ([key, value]) => (
-                        <div key={key}>
-                          <dt>{key}</dt>
-                          <dd>{value || "Unavailable"}</dd>
-                        </div>
-                      ),
-                    )}
-                  </dl>
-                  {!inventory.data && (
-                    <Empty loading={inventory.loading} noun="inventory data" />
-                  )}
-                </section>
-              )}
-            />
-          )}
-          {tab === "Boot" && (
-            <DashboardGrid
-              fixedLayout={panelLayout([["boot", 0, 0, 7, 4]])}
-              storageKey={pageStorage + "boot"}
-              toolbarTarget={toolbarTarget}
-              renderWidget={() => bootPanel}
-            />
-          )}
-          {tab === "Information" && <Information />}
-          {tab === "iBORK settings" && (
-            <section aria-label="iBORK settings" className="app-settings">
-              <PanelLayoutSettings
-                csrf={csrf}
-                workspace={workspace}
-                settingsRequest={assistant.settingsRequest}
-              >
-                <button
-                  className="quiet"
-                  onClick={() => setTab(defaultDeviceTab(device))}
-                >
-                  Back to server
-                </button>
-                <p className="small-note settings-intro">
-                  Connections, login security, and the electricity rate are
-                  saved on iBORK. Sidebar preferences apply to this browser.
-                </p>
-                <div className="settings-grid">
-                  <ConnectionSettings
-                    csrf={csrf}
-                    openAssistant={assistant.openAssistant}
-                  />
-                  {assistant.settings}
-                  <PasswordSettings csrf={csrf} onChanged={passwordChanged} />
-                  <ElectricityRateSettings />
-                  <SidebarSettings workspace={workspace} openServer={select} />
-                </div>
-              </PanelLayoutSettings>
-            </section>
-          )}
-          {tab === "Server settings" && (
-            <div className="server-settings">
-              <div className="server-settings-main">
-                <ConnectionSettings deviceId={device.id} csrf={csrf} />
-                <div className="server-preferences">
-                  {!!sourcesFor(device).length && (
-                    <ConsolePreferences workspace={workspace} />
-                  )}
-                  <DisplaySettings workspace={workspace} />
-                </div>
-              </div>
-              {(hasManagement || !!sourcesFor(device).length) && (
-                <SettingsPanel
-                  onConnect={() => consoleStore.connect(`${device.id}:jetkvm`)}
-                  connecting={
-                    state === "connecting" || state === "reconnecting"
-                  }
-                  mediaPanel={mediaPanel}
-                  apiPrefix={apiPrefix}
-                  config={config.data}
-                  kvm={kvm}
-                  connected={connected}
-                  confirm={confirm}
-                  feedback={setFeedback}
+                ))}
+              <span className="tabs-end">
+                <ShieldCheck size={14} />
+                Private session
+              </span>
+            </nav>
+            <Notice message={feedback} />
+            <Notice message={config.error} />
+            <div hidden={tab !== "Console"}>
+              {config.data && (
+                <DashboardGrid
+                  active={view === "server" && tab === "Console"}
+                  toolbarTarget={toolbarTarget}
+                  jetAvailable={device.hasJetKVM}
+                  vncAvailable={device.hasVNC}
+                  cometAvailable={hasComet}
+                  managementAvailable={hasManagement}
+                  key={endpointKey + ":" + dashboardVersion}
+                  storageKey={dashboardKey(device)}
+                  onKindsChange={setWidgetKinds}
+                  sensors={sensors.data ?? []}
+                  onEditStart={() => consoleStore.setControl(null)}
+                  beforeRemove={(widget) => {
+                    if (
+                      widget.kind === "jetkvm" ||
+                      widget.kind === "vnc" ||
+                      widget.kind === "glinet"
+                    )
+                      consoleStore.disconnect(`${device.id}:${widget.kind}`);
+                  }}
+                  renderWidget={(widget, editing) => {
+                    if (
+                      ["fans", "temperatures", "psu", "alerts"].includes(
+                        widget.kind,
+                      )
+                    )
+                      return (
+                        <SensorOverview
+                          kind={
+                            widget.kind as
+                              "fans" | "temperatures" | "psu" | "alerts"
+                          }
+                          sensors={
+                            sensors.data?.filter(
+                              (sensor) => !sensor.detailOnly,
+                            ) ?? []
+                          }
+                          error={sensors.error}
+                          loading={sensors.loading}
+                        />
+                      );
+                    if (widget.kind === "events")
+                      return (
+                        <RecentEvents
+                          events={events.data ?? []}
+                          error={events.error}
+                          loading={events.loading}
+                        />
+                      );
+                    if (widget.kind === "inventory")
+                      return (
+                        <InventoryOverview
+                          inventory={inventory.data}
+                          error={inventory.error}
+                          loading={inventory.loading}
+                        />
+                      );
+                    if (widget.kind === "connections")
+                      return (
+                        <ConnectionOverview
+                          connections={[
+                            {
+                              name: "IPMI",
+                              status: bmcOnline
+                                ? "Online"
+                                : power.loading
+                                  ? "Checking"
+                                  : "Offline",
+                              detail: `${device.bmcHost}:${device.bmcPort}`,
+                            },
+                            ...(device.hasJetKVM
+                              ? [
+                                  {
+                                    name: "JetKVM",
+                                    status: state,
+                                    detail: config.data?.jetUrl,
+                                  },
+                                ]
+                              : []),
+                            ...(hasComet
+                              ? [
+                                  {
+                                    name: "GL.iNet Comet",
+                                    status: cometSnapshot.phase,
+                                    detail: config.data?.glUrl,
+                                  },
+                                ]
+                              : []),
+                            ...(device.hasVNC
+                              ? [
+                                  {
+                                    name: "VNC",
+                                    status: vncStatus,
+                                    detail: config.data?.vncHost,
+                                  },
+                                ]
+                              : []),
+                          ]}
+                        />
+                      );
+                    if (widget.kind === "cooling") return coolingPanel;
+                    if (widget.kind === "boot") return bootPanel;
+                    if (widget.kind === "media")
+                      return (
+                        <section className="panel data-panel">
+                          {mediaPanel}
+                        </section>
+                      );
+                    if (widget.kind === "vnc" || widget.kind === "glinet")
+                      return (
+                        <ConsoleSlot
+                          sessionKey={`${device.id}:${widget.kind}`}
+                          visible={view === "server" && tab === "Console"}
+                          interactive={!editing}
+                        />
+                      );
+                    if (widget.kind === "sol")
+                      return (
+                        <SerialConsole
+                          apiPrefix={apiPrefix}
+                          active={!editing && tab === "Console"}
+                        />
+                      );
+                    if (widget.kind === "diagnostics")
+                      return (
+                        <DiagnosticsTerminal
+                          apiPrefix={apiPrefix}
+                          csrf={csrf}
+                          active={!editing && tab === "Console"}
+                        />
+                      );
+                    if (
+                      widget.kind === "power-now" ||
+                      widget.kind === "energy-cost"
+                    )
+                      return (
+                        <PowerUsage history={history} mode={widget.kind} />
+                      );
+                    if (widget.kind === "jetkvm")
+                      return (
+                        <ConsoleSlot
+                          sessionKey={`${device.id}:jetkvm`}
+                          visible={view === "server" && tab === "Console"}
+                          interactive={!editing}
+                        />
+                      );
+                    if (widget.kind === "power-control")
+                      return (
+                        <section className="panel power-panel">
+                          <div className="section-title">
+                            <Power size={17} />
+                            <h2>Power control</h2>
+                            <Badge state={bmcOnline ? "ok" : "unavailable"}>
+                              {power.data?.state ?? "Unknown"}
+                            </Badge>
+                          </div>
+                          <p>Manage the server through IPMI.</p>
+                          <div className="power-buttons">
+                            {actions.map((action) => (
+                              <button
+                                key={action.id}
+                                disabled={!bmcOnline || busy}
+                                className={
+                                  action.id === "off" ? "danger-text" : ""
+                                }
+                                onClick={() =>
+                                  control(
+                                    "power",
+                                    action.id,
+                                    action.name,
+                                    action.id === "on"
+                                      ? "Power on this server?"
+                                      : "This can interrupt running workloads. Unsaved data may be lost. Proceed only when the server is ready.",
+                                  )
+                                }
+                              >
+                                <Power size={14} />
+                                {action.name}
+                                <span>↗</span>
+                              </button>
+                            ))}
+                          </div>
+                          <Notice message={power.error} />
+                        </section>
+                      );
+                    if (widget.kind === "health")
+                      return (
+                        <section className="panel health-panel">
+                          {[
+                            {
+                              icon: Thermometer,
+                              label: "CPU temperature",
+                              sensor: temp,
+                            },
+                            { icon: Wind, label: "Fan speed", sensor: fan },
+                            ...(supplies.length
+                              ? supplies.map((sensor) => ({
+                                  icon: Zap,
+                                  label: sensor.name,
+                                  sensor,
+                                }))
+                              : [
+                                  {
+                                    icon: Zap,
+                                    label: "Power supply",
+                                    sensor: undefined,
+                                  },
+                                ]),
+                          ].map(({ icon: Icon, label, sensor }) => (
+                            <div className="metric" key={label}>
+                              <Icon size={17} />
+                              <span>{label}</span>
+                              <strong
+                                className={
+                                  sensors.error ? "unavailable" : sensor?.state
+                                }
+                              >
+                                {sensors.error
+                                  ? "Unavailable"
+                                  : sensor
+                                    ? sensorReading(sensor)
+                                    : sensors.loading
+                                      ? "Loading…"
+                                      : "Not reported"}
+                              </strong>
+                              {sensor && (
+                                <span className="sr-only">
+                                  {sensors.error ? "Unavailable" : sensor.state}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                          <p className="small-note">
+                            {sensors.error
+                              ? "Sensor readings unavailable"
+                              : "Readings refresh every 20 seconds"}
+                          </p>
+                        </section>
+                      );
+                    if (widget.kind === "power-usage")
+                      return tab === "Console" ? (
+                        <PowerUsage history={history} />
+                      ) : null;
+                    if (
+                      widget.kind === "power-hour" ||
+                      widget.kind === "power-day" ||
+                      widget.kind === "power-week" ||
+                      widget.kind === "power-statistics" ||
+                      widget.kind === "power-projections"
+                    )
+                      return (
+                        <PowerUsage
+                          history={history}
+                          mode={
+                            widget.kind.slice(6) as
+                              | "hour"
+                              | "day"
+                              | "week"
+                              | "statistics"
+                              | "projections"
+                          }
+                        />
+                      );
+                    return (
+                      <SensorReadings
+                        widget={widget}
+                        sensors={sensors.data}
+                        error={sensors.error}
+                        editing={editing}
+                      />
+                    );
+                  }}
                 />
               )}
             </div>
-          )}
-          <div className="mobile-owner">
-            <OwnerLinks />
-          </div>
-        </main>
+            {tab === "Power usage" && (
+              <DashboardGrid
+                fixedLayout={powerLayout}
+                storageKey={pageStorage + "power"}
+                toolbarTarget={toolbarTarget}
+                renderWidget={(widget) => (
+                  <PowerUsage
+                    history={history}
+                    mode={
+                      widget.kind.slice(6) as
+                        "statistics" | "hour" | "day" | "week" | "projections"
+                    }
+                  />
+                )}
+              />
+            )}
+            {tab === "Cooling" && (
+              <DashboardGrid
+                fixedLayout={panelLayout([["cooling", 0, 0, 5, 3]])}
+                storageKey={pageStorage + "cooling"}
+                toolbarTarget={toolbarTarget}
+                renderWidget={() => coolingPanel}
+              />
+            )}
+            {terminalVisited && (
+              <section className="terminal-area" hidden={tab !== "Terminals"}>
+                <DashboardGrid
+                  fixedLayout={terminalLayout}
+                  storageKey={pageStorage + "terminals"}
+                  toolbarTarget={toolbarTarget}
+                  active={tab === "Terminals"}
+                  renderWidget={(widget, editing) =>
+                    widget.kind === "sol" ? (
+                      hasSOLWidget ? (
+                        <button onClick={() => openTerminalWidget("sol")}>
+                          Open serial console widget
+                        </button>
+                      ) : (
+                        <SerialConsole
+                          apiPrefix={apiPrefix}
+                          active={tab === "Terminals" && !editing}
+                        />
+                      )
+                    ) : hasDiagnosticsWidget ? (
+                      <button onClick={() => openTerminalWidget("diagnostics")}>
+                        Open diagnostics widget
+                      </button>
+                    ) : (
+                      <DiagnosticsTerminal
+                        apiPrefix={apiPrefix}
+                        csrf={csrf}
+                        active={tab === "Terminals" && !editing}
+                      />
+                    )
+                  }
+                />
+              </section>
+            )}
+            {tab === "Sensors" && (
+              <SensorGroups
+                sensors={sensors.data}
+                error={sensors.error}
+                loading={sensors.loading}
+                storageKey={pageStorage + "sensors"}
+                toolbarTarget={toolbarTarget}
+                refresh={() => setRevision((v) => v + 1)}
+              />
+            )}
+            {tab === "Events" && (
+              <DashboardGrid
+                fixedLayout={panelLayout([["events", 0, 0, 9, 6]])}
+                storageKey={pageStorage + "events"}
+                toolbarTarget={toolbarTarget}
+                renderWidget={() => (
+                  <section className="panel data-panel">
+                    <PanelHeading
+                      title="System event log"
+                      detail="Events reported by the BMC; unknown severity is left unclassified"
+                      refresh={() => setRevision((v) => v + 1)}
+                    />
+                    <Notice message={events.error} />
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Time</th>
+                          <th>Sensor</th>
+                          <th>Event</th>
+                          <th>State</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {events.data?.map((event) => (
+                          <tr key={event.id}>
+                            <td className="mono">{event.timestamp}</td>
+                            <td>{event.sensor}</td>
+                            <td>{event.message}</td>
+                            <td>
+                              <Badge state={event.state}>{event.state}</Badge>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {!events.data?.length && (
+                      <Empty loading={events.loading} noun="events" />
+                    )}
+                    <button
+                      className="danger-text"
+                      disabled={!bmcOnline}
+                      onClick={() =>
+                        control(
+                          "events/clear",
+                          "clear",
+                          "Clear system event log",
+                          "This permanently erases the BMC event log. Export any required records first.",
+                        )
+                      }
+                    >
+                      Clear event log
+                    </button>
+                  </section>
+                )}
+              />
+            )}
+            {tab === "Inventory" && (
+              <DashboardGrid
+                fixedLayout={panelLayout([["inventory", 0, 0, 7, 6]])}
+                storageKey={pageStorage + "inventory"}
+                toolbarTarget={toolbarTarget}
+                renderWidget={() => (
+                  <section className="panel data-panel">
+                    <PanelHeading
+                      title="System inventory & FRU"
+                      detail="Manufacturer, board, chassis and controller information"
+                      refresh={() => setRevision((v) => v + 1)}
+                    />
+                    <Notice message={inventory.error} />
+                    <dl className="inventory">
+                      {Object.entries(inventory.data?.fields ?? {}).map(
+                        ([key, value]) => (
+                          <div key={key}>
+                            <dt>{key}</dt>
+                            <dd>{value || "Unavailable"}</dd>
+                          </div>
+                        ),
+                      )}
+                    </dl>
+                    {!inventory.data && (
+                      <Empty
+                        loading={inventory.loading}
+                        noun="inventory data"
+                      />
+                    )}
+                  </section>
+                )}
+              />
+            )}
+            {tab === "Boot" && (
+              <DashboardGrid
+                fixedLayout={panelLayout([["boot", 0, 0, 7, 4]])}
+                storageKey={pageStorage + "boot"}
+                toolbarTarget={toolbarTarget}
+                renderWidget={() => bootPanel}
+              />
+            )}
+            {tab === "Information" && <Information />}
+            {tab === "iBORK settings" && (
+              <section aria-label="iBORK settings" className="app-settings">
+                <PanelLayoutSettings
+                  csrf={csrf}
+                  workspace={workspace}
+                  settingsRequest={assistant.settingsRequest}
+                >
+                  <button
+                    className="quiet"
+                    onClick={() => setTab(defaultDeviceTab(device))}
+                  >
+                    Back to server
+                  </button>
+                  <p className="small-note settings-intro">
+                    Connections, login security, and the electricity rate are
+                    saved on iBORK. Sidebar preferences apply to this browser.
+                  </p>
+                  <div className="settings-grid">
+                    <ConnectionSettings
+                      csrf={csrf}
+                      openAssistant={assistant.openAssistant}
+                    />
+                    {assistant.settings}
+                    <PasswordSettings csrf={csrf} onChanged={passwordChanged} />
+                    <ElectricityRateSettings />
+                    <SidebarSettings
+                      workspace={workspace}
+                      openServer={select}
+                    />
+                  </div>
+                </PanelLayoutSettings>
+              </section>
+            )}
+            {tab === "Server settings" && (
+              <div className="server-settings">
+                <div className="server-settings-main">
+                  <ConnectionSettings deviceId={device.id} csrf={csrf} />
+                  <div className="server-preferences">
+                    {!!sourcesFor(device).length && (
+                      <ConsolePreferences workspace={workspace} />
+                    )}
+                    <DisplaySettings workspace={workspace} />
+                  </div>
+                </div>
+                {(hasManagement || !!sourcesFor(device).length) && (
+                  <SettingsPanel
+                    onConnect={() =>
+                      consoleStore.connect(`${device.id}:jetkvm`)
+                    }
+                    connecting={
+                      state === "connecting" || state === "reconnecting"
+                    }
+                    mediaPanel={mediaPanel}
+                    apiPrefix={apiPrefix}
+                    config={config.data}
+                    kvm={kvm}
+                    connected={connected}
+                    confirm={confirm}
+                    feedback={setFeedback}
+                  />
+                )}
+              </div>
+            )}
+            <div className="mobile-owner">
+              <OwnerLinks />
+            </div>
+          </main>
+        </DashboardScope.Provider>
       </div>
       <dialog
         ref={dialog}

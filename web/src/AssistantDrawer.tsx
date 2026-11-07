@@ -6,10 +6,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ChevronLeft, Settings, X } from "lucide-react";
+import { ChevronLeft, LayoutDashboard, Settings, X } from "lucide-react";
 import brain from "./assets/assistant-brain.png";
 import { assistantCopy } from "./assistant-copy";
 import "./Assistant.css";
+import { useDashboardAssistant } from "./DashboardAssistant";
 
 const Assistant = lazy(() => import("./Assistant"));
 export type SettingsSection = "provider" | "scope" | "connect";
@@ -30,6 +31,7 @@ export function AssistantDrawer({
   onLayout?: (id: string) => void;
   children: (controls: AssistantControls) => ReactNode;
 }) {
+  const dashboards = useDashboardAssistant();
   const t = assistantCopy(navigator.language);
   const dialog = useRef<HTMLDialogElement>(null);
   const [opened, setOpened] = useState(false);
@@ -43,10 +45,22 @@ export function AssistantDrawer({
     else node.showModal();
   }
   function openAssistant() {
+    dashboards?.setOpen(true);
     setLoaded(true);
     if (!dialog.current?.open) showDrawer();
     setOpened(true);
   }
+  const dashboardOpen = dashboards?.open;
+  useEffect(() => {
+    if (dashboardOpen === undefined) return;
+    if (dashboardOpen) {
+      setLoaded(true);
+      if (!dialog.current?.open) showDrawer();
+      setOpened(true);
+    } else {
+      dialog.current?.close();
+    }
+  }, [dashboardOpen]);
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 1200px)");
     function resize() {
@@ -95,11 +109,23 @@ export function AssistantDrawer({
         ref={dialog}
         aria-labelledby="assistant-title"
         closedby="closerequest"
-        onClose={(e) => setOpened(e.currentTarget.open)}
+        onClose={(e) => {
+          setOpened(e.currentTarget.open);
+          dashboards?.setOpen(e.currentTarget.open);
+        }}
       >
         <header>
           <img src={brain} alt="" width="38" height="32" />
           <h2 id="assistant-title">{t.title}</h2>
+          {dashboards && (
+            <button
+              aria-label="View draft"
+              title="View draft"
+              onClick={dashboards.viewDraft}
+            >
+              <LayoutDashboard size={18} />
+            </button>
+          )}
           <button
             aria-label={t.settings}
             title={t.settings}
@@ -119,6 +145,7 @@ export function AssistantDrawer({
             <X size={20} />
           </button>
         </header>
+        {dashboards?.notice && <p role="status">{dashboards.notice}</p>}
         {loaded && (
           <Suspense fallback={<p role="status">{t.checking}</p>}>
             <Assistant

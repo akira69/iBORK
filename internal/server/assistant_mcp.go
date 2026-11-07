@@ -70,7 +70,7 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 		Method  string
 		Params  json.RawMessage
 	}
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384))
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, assistant.DashboardLimit+1024))
 	rpcError := func(status, code int, msg string) {
 		reply(w, status, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": code, "message": msg}})
 	}
@@ -83,6 +83,13 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 		req.ID = nil
 		rpcError(400, -32600, "Invalid request")
 		return
+	}
+	if decoder.InputOffset() > 16384 {
+		var params struct{ Name string }
+		if req.Method != "tools/call" || json.Unmarshal(req.Params, &params) != nil || params.Name != "propose_dashboard" {
+			rpcError(400, -32600, "Request too large")
+			return
+		}
 	}
 	if len(req.ID) == 0 {
 		w.WriteHeader(202)

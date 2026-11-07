@@ -51,7 +51,7 @@ func (s *Server) initGrant(a *assistantSession) {
 	if time.Now().Before(a.activeUntil) {
 		return
 	}
-	a.grant = assistant.Grant{Servers: map[string]string{}}
+	a.grant = assistant.Grant{Servers: map[string]string{}, DashboardDevices: s.dashboardDevices(), ReadDashboardSensors: s.dashboardSensors}
 	for _, id := range s.deviceOrder {
 		a.grant.Servers[id] = s.devices[id].cfg.ServerName
 	}
@@ -123,7 +123,13 @@ func (s *Server) serveAssistant(w http.ResponseWriter, r *http.Request, sess *se
 		fail(w, 405, "Method not allowed")
 		return
 	}
+	if (action == "chat" || action == "pair" || action == "scope") && a.grant.Dashboard != nil && r.Header.Get("X-Assistant-Instance") != a.grant.Dashboard.Instance {
+		fail(w, 409, "Dashboard belongs to another browser tab")
+		return
+	}
 	switch action {
+	case "dashboard":
+		s.publishAssistantDashboard(w, r, a, ctx)
 	case "provider":
 		var p assistant.Provider
 		if !decode(w, r, &p) {

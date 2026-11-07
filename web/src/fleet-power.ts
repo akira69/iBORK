@@ -55,56 +55,107 @@ export function fleetPower(
   return { watts: reporting ? watts : null, reporting, total: members.size };
 }
 
-// Walk the sorted intervals together. Only an overlap shared by every server contributes.
+// Split at sample boundaries; missing members never erase another server's history.
 export function fleetHistory(
   ids: string[],
   readings: FleetReadings,
   seconds: number,
   elapsed = 0,
 ) {
-  const members = [...new Set(ids)].map((id) => readings.get(id));
-  const now = members.reduce(
-    (latest, r) =>
-      r?.data ? Math.max(latest, serviceTime(r, elapsed)) : latest,
-    0,
-  );
+  const members = [...new Set(ids)];
+  const now = members.reduce((latest, id) => {
+    const reading = readings.get(id);
+    return reading?.data
+      ? Math.max(latest, serviceTime(reading, elapsed))
+      : latest;
+  }, 0);
   const start = now - seconds;
-  const lines: PowerSample[][] = [];
-  let wattSeconds = 0,
-    coveredSeconds = 0;
-  const cursors = members.map((h) => {
-    const samples = h?.data?.samples ?? [];
-    const first = samples.findIndex((p) => p.at >= start);
-    return {
-      samples,
-      through: h?.data?.now ?? 0,
-      i: first < 0 ? samples.length : Math.max(1, first),
-    };
-  });
-  while (
-    cursors.length &&
-    cursors.every(
-      (c) => c.i < c.samples.length && c.samples[c.i].at <= c.through,
-    )
-  ) {
-    const pairs = cursors.map(
-      (c) => [c.samples[c.i - 1], c.samples[c.i]] as const,
-    );
-    const end = Math.min(...pairs.map(([, b]) => b.at));
-    const left = Math.max(start, ...pairs.map(([a]) => a.at)),
-      right = Math.min(now, end);
-    if (right > left && pairs.every(([a, b]) => validInterval(a, b))) {
-      const sumAt = (t: number) =>
-        pairs.reduce((sum, [a, b]) => sum + wattsAt(a, b, t), 0);
-      const a = { at: left, watts: sumAt(left) },
-        b = { at: right, watts: sumAt(right) };
-      const last = lines.at(-1);
-      if (last?.at(-1)?.at === left) last.push(b);
-      else lines.push([a, b]);
-      wattSeconds += ((a.watts + b.watts) / 2) * (right - left);
-      coveredSeconds += right - left;
+  type Pair = readonly [PowerSample, PowerSample];
+  const events: { at: number; id: string; pair: Pair | null }[] = [];
+  const historyIds: string[] = [];
+  for (const id of members) {
+    const data = readings.get(id)?.data;
+    if (!data) continue;
+    const before = events.length;
+    for (let i = 1; i < data.samples.length; i++) {
+      const a = data.samples[i - 1],
+        b = data.samples[i];
+      if (
+        !validInterval(a, b) ||
+        b.at > data.now ||
+        !Number.isFinite(a.watts) ||
+        !Number.isFinite(b.watts) ||
+        a.watts < 0 ||
+        b.watts < 0
+      )
+        continue;
+      const left = Math.max(start, a.at),
+        right = Math.min(now, b.at);
+      if (right <= left) continue;
+      events.push(
+        { at: left, id, pair: [a, b] },
+        { at: right, id, pair: null },
+      );
     }
-    for (const c of cursors) if (c.samples[c.i].at === end) c.i++;
+    if (events.length > before) historyIds.push(id);
   }
-  return { lines, start, now, coveredSeconds, kwh: wattSeconds / 3600000 };
+  // End an old interval before starting the next at the same timestamp.
+  events.sort((a, b) => a.at - b.at || Number(!!a.pair) - Number(!!b.pair));
+  const active = new Map<string, Pair>();
+  const lines: PowerSample[][] = [],
+    contributors: string[][] = [];
+  let wattSeconds = 0,
+    coveredSeconds = 0,
+    serverSeconds = 0;
+  let minReporting = members.length,
+    maxReporting = 0;
+  for (let i = 0; i < events.length;) {
+    const left = events[i].at;
+    do {
+      const { id, pair } = events[i++];
+      if (pair) active.set(id, pair);
+      else active.delete(id);
+    } while (i < events.length && events[i].at === left);
+    if (!active.size || i === events.length) continue;
+    const right = events[i].at;
+    const ids = members.filter((id) => active.has(id));
+    const sumAt = (at: number) =>
+      [...active.values()].reduce((sum, [a, b]) => sum + wattsAt(a, b, at), 0);
+    const a = { at: left, watts: sumAt(left) },
+      b = { at: right, watts: sumAt(right) };
+    const last = lines.at(-1),
+      previous = contributors.at(-1);
+    if (
+      last?.at(-1)?.at === left &&
+      previous?.length === ids.length &&
+      previous.every((id, i) => id === ids[i])
+    )
+      last.push(b);
+    else {
+      lines.push([a, b]);
+      contributors.push(ids);
+    }
+    wattSeconds += ((a.watts + b.watts) / 2) * (right - left);
+    coveredSeconds += right - left;
+    serverSeconds += (right - left) * active.size;
+    minReporting = Math.min(minReporting, active.size);
+    maxReporting = Math.max(maxReporting, active.size);
+  }
+  return {
+    lines,
+    contributors,
+    start,
+    now,
+    coveredSeconds,
+    serverSeconds,
+    kwh: wattSeconds / 3600000,
+    coverage:
+      members.length && seconds > 0
+        ? serverSeconds / (members.length * seconds)
+        : 0,
+    historyIds,
+    total: members.length,
+    minReporting: maxReporting ? minReporting : 0,
+    maxReporting,
+  };
 }

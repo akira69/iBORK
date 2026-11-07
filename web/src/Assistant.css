@@ -342,3 +342,30 @@
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
   gap: 0 12px;
 }
+
+.dashboard-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.dashboard-preview strong {
+  margin-right: auto;
+}
+.dashboard-preview button {
+  padding: 6px 10px;
+}
+.dashboard-preview button[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+.dashboard-preview p {
+  flex-basis: 100%;
+}
+
+.widget-body[inert] {
+  opacity: 0.65;
+}

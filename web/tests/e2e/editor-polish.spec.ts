@@ -110,12 +110,12 @@ test("single readings fit their content and an independent week chart survives r
     .click();
   await catalog.getByRole("button", { name: "Last week", exact: true }).click();
   const editingReading = (await sensor
-    .locator(".sensor-reading")
+    .locator(".measurement-reading")
     .boundingBox())!;
   await page.getByRole("button", { name: "Done", exact: true }).click();
-  expect((await sensor.locator(".sensor-reading").boundingBox())!.height).toBe(
-    editingReading.height,
-  );
+  expect(
+    (await sensor.locator(".measurement-reading").boundingBox())!.height,
+  ).toBe(editingReading.height);
   const value = sensor.getByText("42 °C", { exact: true });
   const outer = (await sensor.boundingBox())!,
     inner = (await value.boundingBox())!;

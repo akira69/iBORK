@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useId,
   useState,
@@ -27,9 +28,15 @@ import "gridstack/dist/gridstack.css";
 import "./OverviewWidgets.css";
 import { WidgetCatalog } from "./WidgetCatalog";
 import {
+  DashboardScope,
+  DashboardPreview,
+  useDashboardSurface,
+} from "./DashboardAssistant";
+import {
   catalog,
   validDashboardSensorId,
   availableDashboardLayout,
+  widgetAvailable,
   selectedSensors,
   defaultLayout,
   readLayout,
@@ -39,8 +46,11 @@ import {
   type WidgetKind,
 } from "./dashboard-layout";
 
-export type ScopedWidget = Pick<DashboardWidget, "deviceIds" | "sensorId"> & {
-  kind: "power-now" | "power-hour" | "sensor";
+export type ScopedWidget = Pick<
+  DashboardWidget,
+  "deviceIds" | "sensorId" | "sensorIds" | "aggregate" | "title"
+> & {
+  kind: "power-now" | "power-hour" | "sensor" | "jetkvm" | "vnc" | "glinet";
 };
 type Props = {
   fleet?: {
@@ -49,6 +59,8 @@ type Props = {
     feeds: (widgets: DashboardWidget[], editing: boolean) => ReactNode;
   };
   storageKey: string;
+  dashboardTitle?: string;
+  initialLayout?: DashboardLayout;
   jetAvailable?: boolean;
   vncAvailable?: boolean;
   cometAvailable?: boolean;
@@ -63,6 +75,7 @@ type Props = {
   sensors?: { id: string; name: string }[];
 };
 type Board = Props & {
+  previewing: boolean;
   sensors: { id: string; name: string }[];
   layout: DashboardLayout;
   editing: boolean;
@@ -79,7 +92,8 @@ function Widget({ id }: Record<string, unknown>) {
   const editorId = useId();
   const widget = board.layout.widgets.find((w) => w.id === id);
   if (!widget) return null;
-  const title = board.fleet?.title(widget) ?? catalog[widget.kind].title;
+  const title =
+    board.fleet?.title(widget) ?? widget.title ?? catalog[widget.kind].title;
   const selected = selectedSensors(widget);
   return (
     <section
@@ -118,7 +132,11 @@ function Widget({ id }: Record<string, unknown>) {
           {widget.kind === "jetkvm" && (
             <img className="widget-logo" src={jetLogo} alt="JetKVM" />
           )}
-          <strong>{widget.kind === "jetkvm" ? "Console" : title}</strong>
+          <strong>
+            {widget.kind === "jetkvm" && !board.fleet && !widget.title
+              ? "Console"
+              : title}
+          </strong>
         </span>
         {board.editing && !board.fleet && widget.kind === "sensor" && (
           <>
@@ -286,7 +304,22 @@ function Widget({ id }: Record<string, unknown>) {
           </button>
         )}
       </header>
-      <div className={`widget-body widget-${widget.kind}`}>
+      <div
+        className={`widget-body widget-${widget.kind}`}
+        inert={
+          board.previewing &&
+          ![
+            "sensor",
+            "power-now",
+            "power-hour",
+            "power-day",
+            "power-week",
+            "power-statistics",
+            "power-projections",
+            "health",
+          ].includes(widget.kind)
+        }
+      >
         {widget.kind === "sensor" && (
           <>
             {widget.sensorMode === "selectable" && (
@@ -316,7 +349,7 @@ function Widget({ id }: Record<string, unknown>) {
             )}
           </>
         )}
-        {board.renderWidget(widget, board.editing)}
+        {board.renderWidget(widget, board.editing || board.previewing)}
       </div>
     </section>
   );
@@ -336,8 +369,10 @@ const nodeFor = (widget: DashboardWidget) => ({
 });
 
 export function DashboardGrid(props: Props) {
+  const scope = useContext(DashboardScope);
   const defaults =
     props.fixedLayout ??
+    props.initialLayout ??
     (props.fleet
       ? { version: 1 as const, widgets: [] }
       : defaultLayout(
@@ -361,16 +396,68 @@ export function DashboardGrid(props: Props) {
     const saved = readLayout(props.storageKey, defaults);
     return { ...saved, layout: available(saved.layout) };
   });
-  const [layout, setLayout] = useState(initial.layout),
+  const [savedLayout, setLayout] = useState(initial.layout),
     [error, setError] = useState(initial.error);
   const [editing, setEditing] = useState(false),
     [resetting, setResetting] = useState(false),
     [narrow, setNarrow] = useState(false);
   const gridRef = useRef<GridStackHandle>(null),
     container = useRef<HTMLDivElement>(null);
+  const { controller, draft } = useDashboardSurface(
+    {
+      target: props.storageKey,
+      title: props.dashboardTitle ?? scope.title ?? "Dashboard",
+      mode: props.fleet ? "fleet" : props.fixedLayout ? "fixed" : "device",
+      ...(scope.deviceId && !props.fleet ? { deviceId: scope.deviceId } : {}),
+      layout: savedLayout,
+      catalog: (Object.keys(catalog) as WidgetKind[])
+        .filter((kind) =>
+          props.fixedLayout
+            ? defaults.widgets.some((w) => w.kind === kind)
+            : props.fleet
+              ? [
+                  "sensor",
+                  "power-now",
+                  "power-hour",
+                  "jetkvm",
+                  "vnc",
+                  "glinet",
+                ].includes(kind)
+              : widgetAvailable(
+                  kind,
+                  props.jetAvailable,
+                  props.vncAvailable,
+                  props.managementAvailable,
+                  props.cometAvailable,
+                ),
+        )
+        .map((kind) => ({ kind, ...catalog[kind] })),
+      read: () => localStorage.getItem(props.storageKey),
+      save: (next) => {
+        const error = writeLayout(props.storageKey, next);
+        if (error) throw Error(error);
+        setLayout(next);
+      },
+    },
+    props.active !== false && scope.active !== false,
+  );
+  const layout = draft
+    ? draft.showCurrent
+      ? draft.baseline
+      : draft.layout
+    : savedLayout;
   const current = useRef(layout);
+  const loadingGrid = useRef(false);
+  useLayoutEffect(() => {
+    if (current.current === layout) return;
+    current.current = layout;
+    loadingGrid.current = true;
+    gridRef.current?.getGrid()?.load(layout.widgets.map(nodeFor));
+    loadingGrid.current = false;
+  }, [layout]);
   const [options] = useState<GridStackOptions>(() => ({
     column: 12,
+    float: true,
     cellHeight: 80,
     margin: 8,
     animate: false,
@@ -383,8 +470,8 @@ export function DashboardGrid(props: Props) {
   }));
   const { onKindsChange } = props;
   useEffect(() => {
-    onKindsChange?.(initial.layout.widgets.map((w) => w.kind));
-  }, [onKindsChange, initial]);
+    onKindsChange?.(layout.widgets.map((w) => w.kind));
+  }, [onKindsChange, layout]);
   useEffect(() => {
     const element = container.current;
     if (!element) return;
@@ -394,19 +481,27 @@ export function DashboardGrid(props: Props) {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+  const canEdit =
+    editing && !narrow && !draft?.showCurrent && !controller?.busy;
   useEffect(() => {
     const grid = gridRef.current?.getGrid();
-    grid?.enableMove(editing && !narrow);
-    grid?.enableResize(editing && !narrow);
-  }, [editing, narrow]);
+    grid?.enableMove(canEdit);
+    grid?.enableResize(canEdit);
+  }, [canEdit]);
 
   function commit(next: DashboardLayout) {
+    if (loadingGrid.current || draft?.showCurrent || controller?.busy) return;
     current.current = next;
+    if (draft) {
+      controller?.store.edit(props.storageKey, next);
+      return;
+    }
     setLayout(next);
     props.onKindsChange?.(next.widgets.map((w) => w.kind));
     setError(writeLayout(props.storageKey, next));
   }
   function saveGeometry() {
+    if (loadingGrid.current || draft?.showCurrent || controller?.busy) return;
     const grid = gridRef.current?.getGrid();
     if (!grid || grid.getColumn() !== 12) return;
     // GridStack omits dimensions equal to their minimum when serializing.
@@ -433,6 +528,17 @@ export function DashboardGrid(props: Props) {
     sensorMode: "fixed" | "selectable" = "fixed",
     scope?: ScopedWidget,
   ) {
+    if (draft?.showCurrent || controller?.busy) return;
+    if (
+      scope &&
+      ["jetkvm", "vnc", "glinet"].includes(kind) &&
+      current.current.widgets.some(
+        (w) => w.kind === kind && w.deviceIds?.[0] === scope.deviceIds?.[0],
+      )
+    ) {
+      setError("This console is already on the dashboard.");
+      return;
+    }
     if (
       current.current.widgets.length >= 24 ||
       (!scope &&
@@ -463,7 +569,8 @@ export function DashboardGrid(props: Props) {
     saveGeometry();
   }
   function remove(widget: DashboardWidget) {
-    props.beforeRemove?.(widget);
+    if (draft?.showCurrent || controller?.busy) return;
+    if (!draft) props.beforeRemove?.(widget);
     commit({
       version: 1,
       widgets: current.current.widgets.filter((w) => w.id !== widget.id),
@@ -472,6 +579,7 @@ export function DashboardGrid(props: Props) {
     saveGeometry();
   }
   function update(widget: DashboardWidget, patch: Partial<DashboardWidget>) {
+    if (draft?.showCurrent || controller?.busy) return;
     const next = { ...widget, ...patch };
     commit({
       version: 1,
@@ -495,16 +603,18 @@ export function DashboardGrid(props: Props) {
     saveGeometry();
   }
   function reset() {
+    if (draft?.showCurrent || controller?.busy) return;
     const resetLayout = available(defaults);
     for (const widget of current.current.widgets)
       if (!resetLayout.widgets.some((w) => w.id === widget.id))
-        props.beforeRemove?.(widget);
+        if (!draft) props.beforeRemove?.(widget);
     commit(resetLayout);
     // load refreshes cached desktop geometry even when currently in one column.
     gridRef.current?.getGrid()?.load(resetLayout.widgets.map(nodeFor));
     setResetting(false);
   }
   function fit(widget: DashboardWidget) {
+    if (draft?.showCurrent || controller?.busy) return;
     const grid = gridRef.current?.getGrid();
     const item = grid
       ?.getGridItems()
@@ -523,6 +633,7 @@ export function DashboardGrid(props: Props) {
     <div className="dashboard-actions">
       <button
         aria-label={editing ? "Done" : "Edit layout"}
+        disabled={draft?.showCurrent || controller?.busy}
         title={editing ? "Done editing layout" : "Edit layout"}
         aria-pressed={editing}
         onClick={() => {
@@ -536,6 +647,7 @@ export function DashboardGrid(props: Props) {
         className="quiet"
         onClick={() => setResetting(true)}
         aria-label="Reset layout"
+        disabled={draft?.showCurrent || controller?.busy}
         title="Reset layout"
       >
         <RotateCcw size={18} />
@@ -559,10 +671,11 @@ export function DashboardGrid(props: Props) {
     <BoardContext.Provider
       value={{
         ...props,
+        previewing: !!draft,
         sensors:
           props.sensors?.filter((s) => validDashboardSensorId(s.id)) ?? [],
         layout,
-        editing,
+        editing: editing && !draft?.showCurrent && !controller?.busy,
         narrow,
         remove,
         update,
@@ -573,6 +686,7 @@ export function DashboardGrid(props: Props) {
         className={`widget-dashboard ${editing ? "is-editing" : ""}`}
         ref={container}
       >
+        <DashboardPreview target={props.storageKey} />
         {props.fleet?.feeds(layout.widgets, editing)}
         {props.active === false
           ? null

@@ -1,0 +1,53 @@
+.measurement-readings {
+  display: grid;
+  gap: 4px;
+  padding: 3px 8px;
+  overflow: auto;
+  min-width: 0;
+}
+.measurement-reading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  border-left: 3px solid var(--line);
+  padding-left: 6px;
+  min-width: 0;
+}
+.measurement-reading strong {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.measurement-reading span,
+.measurement-reading small,
+.measurement-error {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.measurement-reading.ok {
+  border-left-color: #76d6aa;
+}
+.measurement-reading.warning {
+  border-left-color: #ebc780;
+}
+.measurement-reading.critical {
+  border-left-color: #f09a97;
+}
+.measurement-reading.unavailable strong {
+  color: var(--muted);
+}
+.widget-power-now .compact-power {
+  flex-direction: row;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  padding: 3px 8px;
+  overflow: auto;
+}
+.widget-power-now .compact-power > strong {
+  font-size: 18px;
+}
+.widget-power-now .compact-power > p {
+  margin: 0;
+}

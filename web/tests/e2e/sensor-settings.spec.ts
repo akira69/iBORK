@@ -36,11 +36,11 @@ test("wide dashboard and fixed sensor groups stay compact outside edit mode", as
   ).toHaveCount(0);
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(widget.getByRole("combobox")).toHaveCount(0);
-  await expect(widget.locator(".sensor-reading")).toHaveCount(2);
+  await expect(widget.locator(".measurement-reading")).toHaveCount(2);
   await expect(widget).toContainText("42 °C");
   await expect(widget).toContainText("3,200 RPM");
   await page.reload();
-  await expect(widget.locator(".sensor-reading")).toHaveCount(2);
+  await expect(widget.locator(".measurement-reading")).toHaveCount(2);
   await expect(widget.getByRole("combobox")).toHaveCount(0);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.screenshot({

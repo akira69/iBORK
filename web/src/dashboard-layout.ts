@@ -44,10 +44,14 @@ export type DashboardWidget = {
   sensorId?: string;
   sensorIds?: string[];
   sensorMode?: "fixed" | "selectable";
+  aggregate?: "max";
+  title?: string;
 };
 export const validDashboardSensorId = (id: unknown): id is string =>
   typeof id === "string" && id.length > 0 && id.length <= 128;
-export const selectedSensors = (widget: DashboardWidget): string[] =>
+export const selectedSensors = (
+  widget: Pick<DashboardWidget, "sensorId" | "sensorIds" | "sensorMode">,
+): string[] =>
   widget.sensorMode === "selectable"
     ? widget.sensorId
       ? [widget.sensorId]
@@ -90,13 +94,13 @@ export const catalog: Record<
     w: 5,
     h: 3,
   },
-  jetkvm: { title: "JetKVM", minW: 6, minH: 4, w: 8, h: 6 },
-  glinet: { title: "GL.iNet Comet", minW: 6, minH: 4, w: 8, h: 6 },
-  vnc: { title: "iDRAC console", minW: 6, minH: 4, w: 8, h: 6 },
+  jetkvm: { title: "JetKVM", minW: 3, minH: 4, w: 8, h: 6 },
+  glinet: { title: "GL.iNet Comet", minW: 3, minH: 4, w: 8, h: 6 },
+  vnc: { title: "iDRAC console", minW: 3, minH: 4, w: 8, h: 6 },
   "power-control": { title: "Power control", minW: 3, minH: 3, w: 4, h: 3 },
   health: { title: "At a glance", minW: 3, minH: 3, w: 4, h: 3 },
   "power-usage": { title: "Power consumption", minW: 6, minH: 6, w: 12, h: 10 },
-  sensor: { title: "Sensor reading", minW: 2, minH: 2, w: 3, h: 3 },
+  sensor: { title: "Sensor reading", minW: 2, minH: 1, w: 3, h: 1 },
   cooling: { title: "Cooling", minW: 3, minH: 2, w: 4, h: 3 },
   fans: { title: "Fan speeds", minW: 2, minH: 3, w: 4, h: 4 },
   temperatures: { title: "Temperatures", minW: 2, minH: 3, w: 4, h: 4 },
@@ -105,7 +109,7 @@ export const catalog: Record<
   events: { title: "Recent events", minW: 3, minH: 3, w: 6, h: 5 },
   inventory: { title: "Server inventory", minW: 3, minH: 3, w: 4, h: 5 },
   connections: { title: "Connections", minW: 2, minH: 3, w: 4, h: 3 },
-  "power-now": { title: "Current power", minW: 2, minH: 2, w: 3, h: 3 },
+  "power-now": { title: "Current power", minW: 2, minH: 1, w: 3, h: 1 },
   "energy-cost": {
     title: "Measured energy & cost",
     minW: 3,
@@ -198,14 +202,16 @@ export function availableDashboardLayout(
           ? { ...w, id: "glinet", kind: "glinet" as const }
           : w,
       )
-      .filter((w) =>
-        widgetAvailable(
-          w.kind,
-          jetAvailable,
-          vncAvailable,
-          managementAvailable,
-          cometAvailable,
-        ),
+      .filter(
+        (w) =>
+          fleet ||
+          widgetAvailable(
+            w.kind,
+            jetAvailable,
+            vncAvailable,
+            managementAvailable,
+            cometAvailable,
+          ),
       ),
   };
 }
@@ -254,10 +260,24 @@ export function parseLayout(raw: string | null): DashboardLayout | null {
         return null;
       const kind = item.kind as WidgetKind,
         limits = catalog[kind];
+      if (
+        ["jetkvm", "vnc", "glinet"].includes(kind) &&
+        widgets.some(
+          (w) => w.kind === kind && w.deviceIds?.[0] === item.deviceIds?.[0],
+        )
+      )
+        return null;
       const scoped = item.deviceIds !== undefined;
       if (
         scoped &&
-        (!["sensor", "power-now", "power-hour"].includes(kind) ||
+        (![
+          "sensor",
+          "power-now",
+          "power-hour",
+          "jetkvm",
+          "vnc",
+          "glinet",
+        ].includes(kind) ||
           !Array.isArray(item.deviceIds) ||
           !item.deviceIds.length ||
           item.deviceIds.length > 16 ||
@@ -266,8 +286,9 @@ export function parseLayout(raw: string | null): DashboardLayout | null {
               typeof id !== "string" || !/^[a-z0-9][a-z0-9-]{0,31}$/.test(id),
           ) ||
           new Set(item.deviceIds).size !== item.deviceIds.length ||
-          (kind === "sensor" &&
-            (item.deviceIds.length !== 1 || !item.sensorId)))
+          (["sensor", "jetkvm", "vnc", "glinet"].includes(kind) &&
+            item.deviceIds.length !== 1) ||
+          (kind === "sensor" && !selectedSensors(item).length))
       )
         return null;
       if (
@@ -298,6 +319,12 @@ export function parseLayout(raw: string | null): DashboardLayout | null {
         return null;
       ids.add(item.id);
       if (
+        (item.title !== undefined &&
+          (typeof item.title !== "string" || item.title.length > 100)) ||
+        (item.aggregate !== undefined &&
+          (kind !== "sensor" ||
+            item.aggregate !== "max" ||
+            item.sensorMode === "selectable")) ||
         (item.sensorMode !== undefined &&
           (kind !== "sensor" ||
             !["fixed", "selectable"].includes(item.sensorMode))) ||
@@ -322,6 +349,8 @@ export function parseLayout(raw: string | null): DashboardLayout | null {
         ...(item.sensorMode === undefined
           ? {}
           : { sensorMode: item.sensorMode }),
+        ...(item.aggregate === undefined ? {} : { aggregate: item.aggregate }),
+        ...(item.title === undefined ? {} : { title: item.title }),
       });
     }
     return { version: 1, widgets };
