@@ -28,6 +28,8 @@ In **Assistant settings → Model**, enter your provider’s OpenAI-compatible `
 
 Type a question or choose a suggestion and edit it. Press `Enter` to send or `Shift+Enter` for a new line. The selected provider receives your messages, dashboard layout, sensor readings and device findings. Use the connection form for device passwords.
 
+Choose **Close conversation** above the composer to clear the chat context and return to the suggested-question buttons. Your selected model and dashboard draft remain available. The header's **Close assistant** button only hides the drawer, preserving the conversation.
+
 ### Discover and verify devices
 
 In **Assistant settings → Discovery**, approve private IPv4 addresses or a subnet of up to 256 addresses. Try **Find my devices** or **Pair a KVM**. Review the proposed server and its physical pairing, enter credentials in the form, then choose **Verify, save & reconnect**. Verification checks BMC power status or JetKVM access as applicable. You can add a quiet device manually.

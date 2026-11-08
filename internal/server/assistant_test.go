@@ -108,6 +108,60 @@ func TestAssistantSessionAndProvider(t *testing.T) {
 	}
 }
 
+func TestAssistantCloseConversation(t *testing.T) {
+	s, _ := testServer(t)
+	c, csrf := login(t, s)
+	other, _ := login(t, s)
+	a := &s.sessions[c.Value].assistant
+	s.initGrant(a)
+	d := dashboardRequest()
+	d.Draft = true
+	a.grant.Dashboard = &d
+	a.grant.Scope = "192.168.1.1"
+	a.grant.Scan = "scan-result"
+	a.grant.Candidates = []assistant.Candidate{{ID: "candidate"}}
+	a.grant.Draft = &assistant.Draft{ID: "server-draft"}
+	a.grant.Layout = &assistant.Layout{Source: "default", Target: "default"}
+	a.history = []assistant.Message{{Role: "user", Content: "old question"}}
+	_, a.historyProvider = s.modelProvider()
+	s.sessions[other.Value].assistant.history = []assistant.Message{{Role: "user", Content: "other session"}}
+	post := func(instance string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", s.cfg.Origin+"/api/assistant/reset", strings.NewReader("{}"))
+		r.AddCookie(c)
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Origin", s.cfg.Origin)
+		r.Header.Set("X-CSRF-Token", csrf)
+		r.Header.Set("X-Assistant-Instance", instance)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w
+	}
+	if w := request(s, "POST", "/api/assistant/reset", "{}", c, "", s.cfg.Origin); w.Code != 403 {
+		t.Fatal("reset accepted without CSRF", w.Code)
+	}
+	if w := post("other-tab"); w.Code != 409 || len(a.history) != 1 {
+		t.Fatal("foreign tab reset conversation", w.Code)
+	}
+	a.mu.Lock()
+	w := post(d.Instance)
+	a.mu.Unlock()
+	if w.Code != 409 || len(a.history) != 1 {
+		t.Fatal("reset lost an active turn", w.Code)
+	}
+	if w := post(d.Instance); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if len(a.history) != 0 || len(a.grant.Candidates) != 0 || a.grant.Scan != "" || a.grant.Draft != nil || a.grant.Layout != nil {
+		t.Fatal("conversation state survived reset")
+	}
+	if a.grant.Dashboard != &d || a.grant.Scope != "192.168.1.1" || len(s.sessions[other.Value].assistant.history) != 1 {
+		t.Fatal("reset changed dashboard, scope or another session")
+	}
+	if w := request(s, "GET", "/api/assistant/status", "", c, csrf, s.cfg.Origin); strings.Contains(w.Body.String(), "old question") {
+		t.Fatal("closed conversation restored by status")
+	}
+}
+
 func TestAssistantModelCatalogFailure(t *testing.T) {
 	s, _ := testServer(t)
 	c, csrf := login(t, s)

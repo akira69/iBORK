@@ -123,11 +123,22 @@ func (s *Server) serveAssistant(w http.ResponseWriter, r *http.Request, sess *se
 		fail(w, 405, "Method not allowed")
 		return
 	}
-	if (action == "chat" || action == "pair" || action == "scope") && a.grant.Dashboard != nil && r.Header.Get("X-Assistant-Instance") != a.grant.Dashboard.Instance {
+	if (action == "chat" || action == "pair" || action == "scope" || action == "reset") && a.grant.Dashboard != nil && r.Header.Get("X-Assistant-Instance") != a.grant.Dashboard.Instance {
 		fail(w, 409, "Dashboard belongs to another browser tab")
 		return
 	}
 	switch action {
+	case "reset":
+		var input struct{}
+		if !decode(w, r, &input) {
+			return
+		}
+		a.history = nil
+		a.grant.Candidates = nil
+		a.grant.Scan = ""
+		a.grant.Draft = nil
+		a.grant.Layout = nil
+		reply(w, 200, a.grant)
 	case "dashboard":
 		s.publishAssistantDashboard(w, r, a, ctx)
 	case "provider":
