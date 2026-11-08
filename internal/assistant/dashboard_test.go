@@ -21,6 +21,37 @@ func dashboardFixture() (*Grant, Dashboard) {
 	return g, d
 }
 
+func TestDashboardAppearanceProposal(t *testing.T) {
+	for _, mode := range []string{"fleet", "wall"} {
+		t.Run(mode, func(t *testing.T) {
+			g, d := dashboardFixture()
+			d.Mode = mode
+			d.Layout.Widgets = []DashboardWidget{{ID: "console-one", Kind: "jetkvm", W: 6, H: 4, DeviceIDs: []string{"one"}}}
+			if err := g.PublishDashboard(context.Background(), d, ""); err != nil {
+				t.Fatal(err)
+			}
+			propose := func(appearance string) error {
+				raw := fmt.Sprintf(`{"instance":"tab-a","target":"fleet","expectedRevision":%q,"layout":{"version":1,"widgets":[{"id":"console-one","kind":"jetkvm","x":0,"y":0,"w":6,"h":4,"deviceIds":["one"],"appearance":%s}]}}`, g.Dashboard.Revision, appearance)
+				_, err := g.Call(context.Background(), "propose_dashboard", []byte(raw))
+				return err
+			}
+			for _, bad := range []string{`{"density":"huge"}`, `{"accent":"url(evil)"}`, `{"valueSize":"giant"}`, `{"showTitle":"false"}`, `{"plotHeight":119}`, `{"plotHeight":801}`, `{"plotHeight":120.5}`, `{"css":"evil"}`} {
+				before := g.Dashboard
+				if err := propose(bad); err == nil || g.Dashboard != before {
+					t.Fatalf("invalid appearance changed draft: %s", bad)
+				}
+			}
+			if err := propose(`{"density":"comfortable","valueSize":"large","accent":"violet","showTitle":false,"showLegend":false,"plotHeight":320}`); err != nil {
+				t.Fatal(err)
+			}
+			raw, _ := json.Marshal(g.Dashboard.Layout)
+			if !strings.Contains(string(raw), `"showTitle":false`) || !strings.Contains(string(raw), `"plotHeight":320`) {
+				t.Fatal("appearance lost", string(raw))
+			}
+		})
+	}
+}
+
 func TestDashboardSensorsTimeoutAndPreservedOfflineBindings(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		g, d := dashboardFixture()

@@ -24,6 +24,35 @@ const parse = (widgets: unknown[], version = 1) =>
   parseLayout(JSON.stringify({ version, widgets }));
 
 describe("saved dashboard boundary", () => {
+  it("round trips bounded appearance without changing legacy widgets", () => {
+    const appearance = {
+      density: "comfortable",
+      valueSize: "large",
+      accent: "violet",
+      showTitle: false,
+      showLegend: false,
+      plotHeight: 320,
+    };
+    const widget = { ...sensor(), appearance };
+    expect(parse([widget])?.widgets).toEqual([widget]);
+    expect(parse([sensor()])?.widgets).toEqual([sensor()]);
+    for (const bad of [
+      null,
+      [],
+      "blue",
+      { density: "huge" },
+      { valueSize: 4 },
+      { accent: "url(evil)" },
+      { showTitle: "false" },
+      { showLegend: 0 },
+      { plotHeight: 119 },
+      { plotHeight: 801 },
+      { plotHeight: 120.5 },
+      { css: "display:none" },
+    ]) {
+      expect(parse([{ ...sensor(), appearance: bad }])).toBeNull();
+    }
+  });
   it("round trips every singleton and reserves its identity", () => {
     for (const kind of Object.keys(catalog) as WidgetKind[]) {
       if (kind === "sensor") continue;

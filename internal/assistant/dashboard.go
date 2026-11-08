@@ -20,19 +20,36 @@ var DashboardGuide string
 
 const DashboardLimit = 64 * 1024
 
+type WidgetAppearance struct {
+	Density    string `json:"density,omitempty"`
+	ValueSize  string `json:"valueSize,omitempty"`
+	Accent     string `json:"accent,omitempty"`
+	ShowTitle  *bool  `json:"showTitle,omitempty"`
+	ShowLegend *bool  `json:"showLegend,omitempty"`
+	PlotHeight *int   `json:"plotHeight,omitempty"`
+}
+
+func (a *WidgetAppearance) valid() bool {
+	return a == nil || (slices.Contains([]string{"", "compact", "comfortable"}, a.Density) &&
+		slices.Contains([]string{"", "small", "medium", "large"}, a.ValueSize) &&
+		slices.Contains([]string{"", "teal", "blue", "violet", "amber", "slate"}, a.Accent) &&
+		(a.PlotHeight == nil || (*a.PlotHeight >= 120 && *a.PlotHeight <= 800)))
+}
+
 type DashboardWidget struct {
-	ID         string   `json:"id"`
-	Kind       string   `json:"kind"`
-	Title      string   `json:"title,omitempty"`
-	X          int      `json:"x"`
-	Y          int      `json:"y"`
-	W          int      `json:"w"`
-	H          int      `json:"h"`
-	DeviceIDs  []string `json:"deviceIds,omitempty"`
-	SensorID   string   `json:"sensorId,omitempty"`
-	SensorIDs  []string `json:"sensorIds,omitempty"`
-	SensorMode string   `json:"sensorMode,omitempty"`
-	Aggregate  string   `json:"aggregate,omitempty"`
+	ID         string            `json:"id"`
+	Kind       string            `json:"kind"`
+	Title      string            `json:"title,omitempty"`
+	X          int               `json:"x"`
+	Y          int               `json:"y"`
+	W          int               `json:"w"`
+	H          int               `json:"h"`
+	DeviceIDs  []string          `json:"deviceIds,omitempty"`
+	SensorID   string            `json:"sensorId,omitempty"`
+	SensorIDs  []string          `json:"sensorIds,omitempty"`
+	SensorMode string            `json:"sensorMode,omitempty"`
+	Aggregate  string            `json:"aggregate,omitempty"`
+	Appearance *WidgetAppearance `json:"appearance,omitempty"`
 }
 type DashboardLayout struct {
 	Version int               `json:"version"`
@@ -94,6 +111,13 @@ func dashboardProposalTool() Tool {
 	t := tool("propose_dashboard", "Validate a complete layout and replace the active preview only. Read dashboard_context first. The browser must Apply to save.", []string{"instance", "target", "expectedRevision", "layout"}, "instance", "target", "expectedRevision")
 	text := map[string]any{"type": "string"}
 	props := map[string]any{"id": text, "kind": text, "title": text, "sensorId": text, "sensorMode": map[string]any{"type": "string", "enum": []string{"fixed", "selectable"}}, "aggregate": map[string]any{"type": "string", "enum": []string{"max"}}}
+	props["appearance"] = map[string]any{"type": "object", "additionalProperties": false, "description": "Optional presentation; preserve existing values unless asked to change. Omit plotHeight to fill the widget.", "properties": map[string]any{
+		"density":   map[string]any{"type": "string", "enum": []string{"compact", "comfortable"}},
+		"valueSize": map[string]any{"type": "string", "enum": []string{"small", "medium", "large"}},
+		"accent":    map[string]any{"type": "string", "enum": []string{"teal", "blue", "violet", "amber", "slate"}},
+		"showTitle": map[string]any{"type": "boolean"}, "showLegend": map[string]any{"type": "boolean"},
+		"plotHeight": map[string]any{"type": "integer", "minimum": 120, "maximum": 800},
+	}}
 	for _, field := range []string{"x", "y", "w", "h"} {
 		props[field] = map[string]any{"type": "integer"}
 	}
@@ -282,17 +306,21 @@ func (g *Grant) validateDashboard(ctx context.Context, d *Dashboard, layout Dash
 				old.W = w.W
 				old.H = w.H
 				old.Title = w.Title
+				old.Appearance = w.Appearance
 				if reflect.DeepEqual(old, w) {
 					found = true
 					break
 				}
 			}
 			if !found {
-				return errors.New("This dashboard supports moving and resizing its existing widgets only")
+				return errors.New("This dashboard supports arranging and styling its existing widgets only")
 			}
 		}
 	}
 	for index, w := range layout.Widgets {
+		if !w.Appearance.valid() {
+			return errors.New("Invalid widget appearance: use supported density, valueSize, accent and plotHeight 120-800")
+		}
 		k, ok := kinds[w.Kind]
 		if !ok || !widgetID.MatchString(w.ID) || ids[w.ID] || (w.Title != "" && !dashboardText(w.Title, 100)) {
 			return errors.New("Invalid, duplicate or unsupported dashboard widget")

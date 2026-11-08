@@ -30,6 +30,12 @@ Type a question or choose a suggestion and edit it. Press `Enter` to send or `Sh
 
 Choose **Close conversation** above the composer to clear the chat context and return to the suggested-question buttons. Your selected model and dashboard draft remain available. The header's **Close assistant** button only hides the drawer, preserving the conversation.
 
+### Style dashboards and size plots
+
+In **Edit layout**, open a widget's **Appearance** palette button. Choose compact or comfortable density, value size, an accent, and title visibility. Power charts also offer legend visibility and **Plot sizing**: **Fill widget** grows the chart as you resize the card, while **Custom height** sets the plot itself to 120–800 pixels. **Reset appearance** restores the shared defaults. On KVM Wall, hiding the title keeps console controls available.
+
+The Assistant and paired MCP clients can use these same settings on device dashboards, Central Dashboard, Power Overview, fixed telemetry pages and KVM Wall. Try “Use blue accents, make the readings larger, and let the power plot fill its card.” Changes appear in the real dashboard preview; refine them in chat or with the palette before **Apply dashboard**. Existing dashboards inherit the improved default styling without replacing their saved layout. Chart gaps and partial contributions still represent missing data, never zero readings.
+
 ### Discover and verify devices
 
 In **Assistant settings → Discovery**, approve private IPv4 addresses or a subnet of up to 256 addresses. Try **Find my devices** or **Pair a KVM**. Review the proposed server and its physical pairing, enter credentials in the form, then choose **Verify, save & reconnect**. Verification checks BMC power status or JetKVM access as applicable. You can add a quiet device manually.

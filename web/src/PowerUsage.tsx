@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useReducer } from "react";
+import { PowerPlot } from "./PowerPlot";
 import { sampleStatus } from "./fleet-power";
 import { type usePoll } from "./usePoll";
 import { useElectricityRate } from "./ElectricityRate";
@@ -273,90 +274,26 @@ function PowerChart({
   now: number;
   seconds: number;
 }) {
-  const top = Math.max(10, Math.ceil((summary.maximum?.watts ?? 10) / 10) * 10);
-  const x = (i: number) => 42 + ((i + 0.5) * 268) / 12,
-    y = (value: number) => 170 - (value / top) * 140;
-  const lines = [
-    { key: "average", label: "Average" },
-    { key: "minimum", label: "Minimum" },
-    { key: "maximum", label: "Maximum" },
-  ] as const;
+  const series = (["average", "minimum", "maximum"] as const).map((key) => ({
+    name:
+      key === "average" ? "Average" : key === "minimum" ? "Minimum" : "Maximum",
+    color:
+      key === "minimum" ? "#86baff" : key === "maximum" ? "#f1ca83" : undefined,
+    points: summary.buckets.map((bucket, i) => ({
+      at: now - seconds + ((i + 0.5) * seconds) / 12,
+      watts: bucket?.[key] ?? null,
+    })),
+  }));
   return (
     <section className="panel power-chart">
       <h3>{name}</h3>
-      <svg
-        viewBox="0 0 340 205"
-        role="img"
-        aria-label={`${name} power consumption in watts`}
-      >
-        <title>{name} · minimum, average and maximum watts</title>
-        {[0, 0.25, 0.5, 0.75, 1].map((tick) => (
-          <g key={tick}>
-            <line
-              x1="42"
-              x2="310"
-              y1={y(top * tick)}
-              y2={y(top * tick)}
-              className="chart-grid"
-            />
-            <text x="35" y={y(top * tick) + 3} textAnchor="end">
-              {(top * tick).toFixed(0)}
-            </text>
-          </g>
-        ))}
-        <text x="14" y="15">
-          W
-        </text>
-        <text x="42" y="192">
-          {seconds === 3600 ? "−60m" : seconds === 86400 ? "−24h" : "−7d"}
-        </text>
-        <text x="310" y="192" textAnchor="end">
-          now
-        </text>
-        {lines.map(({ key, label }) => {
-          let path = "";
-          let previous = false;
-          summary.buckets.forEach((bucket, i) => {
-            if (!bucket) {
-              previous = false;
-              return;
-            }
-            path += `${previous ? "L" : "M"}${x(i)},${y(bucket[key])} `;
-            previous = true;
-          });
-          return (
-            <g key={key} className={`series-${key}`}>
-              <path d={path} fill="none" strokeWidth="2" />
-              {summary.buckets.map(
-                (bucket, i) =>
-                  bucket && (
-                    <circle key={i} cx={x(i)} cy={y(bucket[key])} r="2.5">
-                      <title>
-                        {label}: {bucket[key].toFixed(1)} W ·{" "}
-                        {timestamp(now - seconds + ((i + 0.5) * seconds) / 12)}
-                      </title>
-                    </circle>
-                  ),
-              )}
-            </g>
-          );
-        })}
-        {!summary.minimum && (
-          <text
-            x="175"
-            y="100"
-            textAnchor="middle"
-          >{`Waiting for samples`}</text>
-        )}
-      </svg>
-      <div className="chart-legend">
-        {lines.map((line) => (
-          <span key={line.key} className={`legend-${line.key}`}>
-            <i />
-            {line.label}
-          </span>
-        ))}
-      </div>
+      <PowerPlot
+        series={series}
+        start={now - seconds}
+        end={now}
+        label={`${name} power consumption in watts`}
+      />
+      {!summary.minimum && <p className="small-note">Waiting for samples</p>}
       <p className="small-note">
         Bucket minimum / sample average / maximum. Empty buckets are gaps.
       </p>

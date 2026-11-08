@@ -1572,32 +1572,6 @@ dialog p {
 .power-chart h3 {
   margin-left: 7px;
 }
-.power-chart svg {
-  width: 100%;
-  margin-top: 15px;
-  overflow: visible;
-}
-.power-chart text {
-  fill: #9aadb7;
-  font-size: 10px;
-  font-family: inherit;
-}
-.chart-grid {
-  stroke: #31424b;
-  stroke-width: 1;
-}
-.series-average {
-  stroke: #93c7f0;
-  fill: #93c7f0;
-}
-.series-minimum {
-  stroke: #f28888;
-  fill: #f28888;
-}
-.series-maximum {
-  stroke: #efc451;
-  fill: #efc451;
-}
 .legend-average {
   color: #93c7f0;
 }
@@ -1606,19 +1580,6 @@ dialog p {
 }
 .legend-maximum {
   color: #efc451;
-}
-.chart-legend {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  font-size: 10px;
-}
-.chart-legend i {
-  display: inline-block;
-  width: 12px;
-  border-top: 2px solid currentColor;
-  margin-right: 5px;
-  vertical-align: middle;
 }
 .energy-projections {
   display: flex;
@@ -1635,9 +1596,6 @@ dialog p {
 @media (max-width: 1000px) {
   .energy-charts {
     grid-template-columns: 1fr;
-  }
-  .power-chart svg {
-    max-height: 260px;
   }
 }
 @media (max-width: 520px) {
@@ -1975,9 +1933,6 @@ input[role="switch"]:checked::before {
 }
 .widget-body > .power-usage .power-chart h3 {
   display: none;
-}
-.widget-body > .power-usage .power-chart svg {
-  max-height: 210px;
 }
 .widget-body > .power-usage .data-heading h2 {
   display: none;

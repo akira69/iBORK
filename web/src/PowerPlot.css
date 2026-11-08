@@ -1,0 +1,60 @@
+.power-plot {
+  width: 100%;
+  min-width: 0;
+  min-height: 120px;
+  height: 220px;
+  flex: 1 1 0;
+}
+.power-plot .recharts-surface {
+  overflow: visible;
+}
+.power-plot-legend {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-top: 5px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.power-plot-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.power-plot-legend i {
+  width: 16px;
+  border-top-width: 2px;
+}
+.widget-body > .fleet-history,
+.widget-body > .power-usage:has(.energy-charts),
+.widget-body > .power-usage > .energy-charts,
+.widget-body > .power-usage > .energy-charts > .power-chart {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.widget-body > .fleet-history {
+  gap: 6px;
+  padding: var(--widget-padding, 12px);
+}
+.widget-body > .fleet-history > :not(.power-plot),
+.power-chart > :not(.power-plot) {
+  flex-shrink: 0;
+}
+.widget-body > .power-usage > .energy-charts {
+  flex: 1;
+}
+.widget-body > .power-usage > .energy-charts > .power-chart {
+  flex: 1;
+}
+.widget-body > .power-usage:has(.data-panel) {
+  height: auto;
+}
+.widget-body > .power-usage:has(.data-panel) .energy-charts {
+  height: auto;
+}
+.widget-body > .power-usage:has(.data-panel) .power-chart {
+  min-height: 300px;
+}

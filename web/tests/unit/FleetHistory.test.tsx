@@ -36,7 +36,9 @@ describe("fleet history presentation", () => {
     expect(html).not.toContain("<script>");
     expect(html).toContain("History details");
     expect(html).toContain("Unmetered: Awaiting power history");
-    expect(html).toContain('stroke-dasharray="4 3"');
+    expect(html).toContain(
+      'aria-label="Available measured watts over the last hour, peak 100 W, 1 of 2 reporting"',
+    );
   });
   it("shows complete measured zero as recorded energy with full coverage", () => {
     const zero = {
