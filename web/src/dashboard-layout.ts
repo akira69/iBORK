@@ -1,3 +1,5 @@
+import { validAppearance, type WidgetAppearance } from "./widget-appearance";
+
 export type WidgetKind =
   | "sensor-cpu"
   | "sensor-memory"
@@ -46,6 +48,7 @@ export type DashboardWidget = {
   sensorMode?: "fixed" | "selectable";
   aggregate?: "max";
   title?: string;
+  appearance?: WidgetAppearance;
 };
 export const validDashboardSensorId = (id: unknown): id is string =>
   typeof id === "string" && id.length > 0 && id.length <= 128;
@@ -319,6 +322,7 @@ export function parseLayout(raw: string | null): DashboardLayout | null {
         return null;
       ids.add(item.id);
       if (
+        (item.appearance !== undefined && !validAppearance(item.appearance)) ||
         (item.title !== undefined &&
           (typeof item.title !== "string" || item.title.length > 100)) ||
         (item.aggregate !== undefined &&
@@ -351,6 +355,9 @@ export function parseLayout(raw: string | null): DashboardLayout | null {
           : { sensorMode: item.sensorMode }),
         ...(item.aggregate === undefined ? {} : { aggregate: item.aggregate }),
         ...(item.title === undefined ? {} : { title: item.title }),
+        ...(item.appearance === undefined
+          ? {}
+          : { appearance: item.appearance }),
       });
     }
     return { version: 1, widgets };

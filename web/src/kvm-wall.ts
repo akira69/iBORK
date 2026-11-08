@@ -1,5 +1,6 @@
 import { sourcesFor, type Device, type ConsoleSource } from "./device-identity";
 import { catalog, type DashboardLayout } from "./dashboard-layout";
+import { validAppearance, type WidgetAppearance } from "./widget-appearance";
 export type WallEntry = {
   deviceId: string;
   source: ConsoleSource;
@@ -9,6 +10,7 @@ export type WallEntry = {
   y: number;
   w: number;
   h: number;
+  appearance?: WidgetAppearance;
 };
 export type WallPreferences = {
   version: 1;
@@ -31,6 +33,7 @@ export function wallDashboard(value: WallPreferences): DashboardLayout {
         y: e.y,
         w: e.w,
         h: e.h,
+        ...(e.appearance ? { appearance: e.appearance } : {}),
       })),
   };
 }
@@ -43,7 +46,9 @@ export function applyWallDashboard(
     automatic: false,
     entries: value.entries.map((e) => {
       const w = layout.widgets.find((w) => w.id === `wall-${e.deviceId}`);
-      return w ? { ...e, x: w.x, y: w.y, w: w.w, h: w.h } : e;
+      return w
+        ? { ...e, x: w.x, y: w.y, w: w.w, h: w.h, appearance: w.appearance }
+        : e;
     }),
   };
 }
@@ -76,7 +81,8 @@ function valid(entry: WallEntry) {
     typeof entry.deviceId !== "string" ||
     !["jetkvm", "vnc", "glinet"].includes(entry.source) ||
     !["manual", "auto"].includes(entry.connect) ||
-    typeof entry.included !== "boolean"
+    typeof entry.included !== "boolean" ||
+    (entry.appearance !== undefined && !validAppearance(entry.appearance))
   )
     return false;
   const limits = wallLimits(entry.source);
@@ -101,6 +107,7 @@ const clean = ({
   y,
   w,
   h,
+  appearance,
 }: WallEntry): WallEntry => ({
   deviceId,
   source,
@@ -110,6 +117,7 @@ const clean = ({
   y,
   w,
   h,
+  ...(appearance ? { appearance } : {}),
 });
 export function readWallPreferences(
   devices: Device[],

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useElectricityRate } from "./ElectricityRate";
 import { fleetHistory, type FleetReadings } from "./fleet-power";
+import { PowerPlot } from "./PowerPlot";
 
 export function FleetHistory({
   ids,
@@ -72,41 +73,16 @@ export function FleetHistory({
     <div className="fleet-history">
       {coveredSeconds > 0 ? (
         <>
-          <svg
-            viewBox="0 0 320 100"
-            role="img"
-            aria-label={`Available measured watts over the last hour, peak ${fmtWatts(peak)}, ${reporting}`}
-          >
-            <path className="fleet-axis" d="M42 5V76H318" />
-            <text x="0" y="12">
-              {fmtWatts(peak)}
-            </text>
-            <text x="0" y="76">
-              0 W
-            </text>
-            <text x="42" y="94">
-              −60 min
-            </text>
-            <text x="318" y="94" textAnchor="end">
-              Now
-            </text>
-            {lines.map((line, i) => (
-              <polyline
-                key={line[0].at}
-                strokeDasharray={
-                  contributors[i].length < total ? "4 3" : undefined
-                }
-                points={line
-                  .map(
-                    (p) =>
-                      `${42 + (276 * (p.at - start)) / hour},${76 - (72 * p.watts) / Math.max(1, peak)}`,
-                  )
-                  .join(" ")}
-              >
-                <title>{descriptions[i]}</title>
-              </polyline>
-            ))}
-          </svg>
+          <PowerPlot
+            start={start}
+            end={start + hour}
+            label={`Available measured watts over the last hour, peak ${fmtWatts(peak)}, ${reporting}`}
+            series={lines.map((points, i) => ({
+              points,
+              partial: contributors[i].length < total,
+              name: `${contributors[i].length < total ? "Partial · " : ""}${contributors[i].length} of ${total} reporting`,
+            }))}
+          />
           <strong>{`Recorded energy${partial}: ${kwh.toFixed(4)} kWh`}</strong>
           {rate !== null && (
             <small>{`Cost of recorded energy${partial}: $${(kwh * rate).toFixed(2)}`}</small>

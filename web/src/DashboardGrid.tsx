@@ -27,6 +27,8 @@ import {
 import "gridstack/dist/gridstack.css";
 import "./OverviewWidgets.css";
 import { WidgetCatalog } from "./WidgetCatalog";
+import { AppearanceContext, AppearanceEditor } from "./WidgetAppearance";
+import "./WidgetAppearance.css";
 import {
   DashboardScope,
   DashboardPreview,
@@ -97,7 +99,11 @@ function Widget({ id }: Record<string, unknown>) {
   const selected = selectedSensors(widget);
   return (
     <section
-      className="widget-shell"
+      className={`widget-shell${widget.appearance?.showTitle === false && !board.editing ? " hide-widget-title" : ""}`}
+      data-density={widget.appearance?.density ?? "compact"}
+      data-value-size={widget.appearance?.valueSize ?? "medium"}
+      data-accent={widget.appearance?.accent ?? "teal"}
+      data-compact={widget.h === 1}
       id={`widget-${widget.id}`}
       aria-label={`${title} widget`}
       tabIndex={-1}
@@ -244,6 +250,18 @@ function Widget({ id }: Record<string, unknown>) {
             </div>
           </>
         )}
+        {board.editing && (
+          <AppearanceEditor
+            value={widget.appearance}
+            chart={[
+              "power-hour",
+              "power-day",
+              "power-week",
+              "power-usage",
+            ].includes(widget.kind)}
+            onChange={(appearance) => board.update(widget, { appearance })}
+          />
+        )}
         {board.editing && !board.narrow && (
           <div className="widget-adjust" aria-label={`Arrange ${title}`}>
             <button
@@ -349,7 +367,9 @@ function Widget({ id }: Record<string, unknown>) {
             )}
           </>
         )}
-        {board.renderWidget(widget, board.editing || board.previewing)}
+        <AppearanceContext value={widget.appearance ?? {}}>
+          {board.renderWidget(widget, board.editing || board.previewing)}
+        </AppearanceContext>
       </div>
     </section>
   );
@@ -589,6 +609,7 @@ export function DashboardGrid(props: Props) {
     });
     if (
       patch.sensorId !== undefined ||
+      patch.appearance !== undefined ||
       patch.sensorIds !== undefined ||
       patch.sensorMode !== undefined
     )

@@ -74,6 +74,17 @@ async function assistant(page: Page) {
           title: "CPU temperature",
         });
       else layout.widgets[0].y += 10;
+      if (route.request().postDataJSON().message.includes("Style")) {
+        const widget =
+          layout.widgets.find((w) => w.id === "cpu-reading") ??
+          layout.widgets[0];
+        widget.appearance = {
+          accent: "blue",
+          valueSize: "large",
+          density: "comfortable",
+          showLegend: false,
+        };
+      }
       state.dashboard = {
         ...state.dashboard!,
         layout,
@@ -104,6 +115,45 @@ async function ask(page: Page, question: string) {
     page.getByRole("button", { name: "Apply dashboard", exact: true }),
   ).toBeEnabled();
 }
+
+test("Assistant styles the real preview and preserves manual appearance through refinement and Apply", async ({
+  page,
+}) => {
+  await setup(page, true, false);
+  const state = await assistant(page);
+  await ask(page, "Style my CPU reading");
+  const card = page.locator("#widget-cpu-reading");
+  await expect(card).toHaveAttribute("data-accent", "blue");
+  const before = await page.evaluate(() =>
+    localStorage.getItem("jet-supermicro:dashboard:v1:192.0.2.50:623"),
+  );
+  await page.getByRole("button", { name: "Edit layout", exact: true }).click();
+  await card.getByRole("button", { name: "Appearance" }).click();
+  const options = page.getByRole("dialog", { name: "Widget appearance" });
+  await options.getByLabel("Accent").selectOption("violet");
+  await options.getByRole("button", { name: "Close appearance" }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await ask(page, "Move the first card down");
+  expect(
+    state.dashboard!.layout.widgets.find((w) => w.id === "cpu-reading")!
+      .appearance?.accent,
+  ).toBe("violet");
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem("jet-supermicro:dashboard:v1:192.0.2.50:623"),
+    ),
+  ).toBe(before);
+  await page.getByRole("button", { name: "Current", exact: true }).click();
+  await expect(card).toHaveCount(0);
+  await page.getByRole("button", { name: "Draft", exact: true }).click();
+  await expect(card).toHaveAttribute("data-accent", "violet");
+  await page
+    .getByRole("button", { name: "Apply dashboard", exact: true })
+    .click();
+  await page.reload();
+  await expect(card).toHaveAttribute("data-accent", "violet");
+  await expect(card).toHaveAttribute("data-value-size", "large");
+});
 
 test("close conversation restores suggestions, preserves drafts and handles reset failure", async ({
   page,
@@ -241,8 +291,11 @@ test("server power dashboard participates and preview controls are inert", async
   await setup(page, true, false);
   await page.getByRole("button", { name: "Power usage", exact: true }).click();
   const state = await assistant(page);
-  await ask(page, "Move the first panel down");
+  await ask(page, "Style the first panel");
   expect(state.dashboard!.mode).toBe("fixed");
+  await expect(
+    page.locator(`#widget-${state.dashboard!.layout.widgets[0].id}`),
+  ).toHaveAttribute("data-accent", "blue");
   expect(state.dashboard!.title).toContain("Power usage");
   await page.getByRole("button", { name: "Discard", exact: true }).click();
   await page.getByRole("button", { name: "Cooling", exact: true }).click();
@@ -309,7 +362,7 @@ test("wall preview changes geometry without changing console connection preferen
   });
   await page.reload();
   const state = await assistant(page);
-  await ask(page, "Move the console down");
+  await ask(page, "Style the console and move it down");
   expect(state.dashboard!.mode).toBe("wall");
   await expect(
     page.getByRole("button", { name: "Connect all", exact: true }),
@@ -328,7 +381,18 @@ test("wall preview changes geometry without changing console connection preferen
     connect: "manual",
     included: true,
     y: 10,
+    appearance: {
+      accent: "blue",
+      valueSize: "large",
+      density: "comfortable",
+      showLegend: false,
+    },
   });
+  await page.reload();
+  await expect(page.locator(".wall-tile").first()).toHaveAttribute(
+    "data-accent",
+    "blue",
+  );
 });
 
 test("MCP proposals appear through status polling and reload starts with saved layout", async ({
@@ -340,6 +404,7 @@ test("MCP proposals appear through status polling and reload starts with saved l
   const instance = state.dashboard!.instance;
   const layout = structuredClone(state.dashboard!.layout);
   layout.widgets[0].y = 10;
+  layout.widgets[0].appearance = { accent: "amber" };
   state.dashboard = {
     ...state.dashboard!,
     layout,
@@ -349,6 +414,10 @@ test("MCP proposals appear through status polling and reload starts with saved l
   await expect(
     page.getByRole("region", { name: "Dashboard preview" }),
   ).toBeVisible();
+  await expect(page.locator(`#widget-${layout.widgets[0].id}`)).toHaveAttribute(
+    "data-accent",
+    "amber",
+  );
   expect(
     await page.evaluate(
       (key) => localStorage.getItem(key),

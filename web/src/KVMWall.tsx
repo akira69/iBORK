@@ -43,6 +43,7 @@ import {
 } from "./kvm-wall";
 import "gridstack/dist/gridstack.css";
 import { ServerIcon } from "./ServerIcon";
+import { AppearanceEditor } from "./WidgetAppearance";
 import { DashboardPreview, useDashboardSurface } from "./DashboardAssistant";
 import { wallDashboard, applyWallDashboard, wallStorageKey } from "./kvm-wall";
 const FleetTelemetry = lazy(async () => ({
@@ -68,6 +69,7 @@ type Board = {
   enlarge: (id: string) => void;
   openServer: (id: string, settings?: boolean) => void;
   resize: (id: string, patch: Partial<WallEntry>) => void;
+  change: (entry: WallEntry, patch: Partial<WallEntry>) => void;
 };
 const BoardContext = createContext<Board | null>(null);
 function Tile({ deviceId }: Record<string, unknown>) {
@@ -88,11 +90,19 @@ function Tile({ deviceId }: Record<string, unknown>) {
   return (
     <section
       className="widget-shell wall-tile"
+      data-accent={entry.appearance?.accent ?? "teal"}
+      data-density={entry.appearance?.density ?? "compact"}
+      data-value-size={entry.appearance?.valueSize ?? "medium"}
       aria-label={`${device.name} console tile`}
     >
       <header className="widget-bar">
         <span
           className="widget-grip"
+          style={
+            entry.appearance?.showTitle === false && !board.editing
+              ? { display: "none" }
+              : undefined
+          }
           tabIndex={board.editing && !board.narrow ? 0 : undefined}
           title={
             board.editing ? "Drag to move; arrow keys move the tile" : undefined
@@ -115,6 +125,13 @@ function Tile({ deviceId }: Record<string, unknown>) {
           <ServerIcon device={device} display={board.displays[device.id]} />
           <strong>{board.displays[device.id]?.name || device.name}</strong>
         </span>
+        {board.editing && (
+          <AppearanceEditor
+            value={entry.appearance}
+            chart={false}
+            onChange={(appearance) => board.change(entry, { appearance })}
+          />
+        )}
         {board.editing && !board.narrow && (
           <span className="widget-adjust">
             {(["w", "h"] as const).map((dimension) => (
@@ -632,6 +649,7 @@ export function KVMWall({
         enlarge: setEnlarged,
         openServer,
         resize,
+        change,
       }}
     >
       <section className="kvm-wall main" aria-label="KVM wall" ref={container}>
