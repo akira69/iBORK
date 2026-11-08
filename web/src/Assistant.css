@@ -143,6 +143,12 @@
 .assistant-composer {
   padding: 0.25rem 0.8rem max(0.8rem, env(safe-area-inset-bottom));
 }
+.assistant-close-conversation {
+  margin-bottom: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+  background: transparent;
+}
 .assistant-composer p:not(:empty) {
   margin: 0 0.25rem 0.5rem;
   overflow-wrap: anywhere;

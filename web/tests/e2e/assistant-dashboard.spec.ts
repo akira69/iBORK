@@ -104,6 +104,63 @@ async function ask(page: Page, question: string) {
     page.getByRole("button", { name: "Apply dashboard", exact: true }),
   ).toBeEnabled();
 }
+
+test("close conversation restores suggestions, preserves drafts and handles reset failure", async ({
+  page,
+}) => {
+  await setup(page, true, false);
+  const state = await assistant(page);
+  await page
+    .getByRole("combobox", { name: "Chat model" })
+    .selectOption("alternate");
+  await ask(page, "Add CPU");
+  const close = page.getByRole("button", {
+    name: "Close conversation",
+    exact: true,
+  });
+  await expect(
+    page.getByRole("group", { name: "Suggested questions" }),
+  ).toHaveCount(0);
+  await page.route("**/api/assistant/reset", (route) =>
+    route.fulfill({ status: 503, json: { error: "Reset unavailable" } }),
+  );
+  await close.click();
+  await expect(
+    page.getByText("Reset unavailable", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("log")).toContainText("Updated the same draft.");
+  await page.unroute("**/api/assistant/reset");
+  await page.route("**/api/assistant/reset", (route) => {
+    expect(route.request().headers()["x-assistant-instance"]).toBe(
+      state.dashboard!.instance,
+    );
+    return route.fulfill({
+      json: { scope: "", servers: {}, dashboard: state.dashboard },
+    });
+  });
+  await close.click();
+  await expect(
+    page.getByRole("group", { name: "Suggested questions" }),
+  ).toBeVisible();
+  await expect(page.getByRole("log")).toBeEmpty();
+  await expect(page.getByRole("combobox", { name: "Chat model" })).toHaveValue(
+    "alternate",
+  );
+  await expect(
+    page.getByRole("textbox", { name: "Your question" }),
+  ).toBeFocused();
+  await expect(
+    page.getByRole("button", { name: "Apply dashboard" }),
+  ).toBeEnabled();
+  await expect(page.locator("#widget-cpu-reading")).toContainText("42 °C");
+  await page
+    .getByRole("button", { name: "Close assistant", exact: true })
+    .click();
+  await page.locator(".assistant-tab").click();
+  await expect(
+    page.getByRole("group", { name: "Suggested questions" }),
+  ).toBeVisible();
+});
 test("iterative preview, manual resize and comparison do not save until Apply", async ({
   page,
 }) => {

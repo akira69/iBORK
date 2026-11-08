@@ -219,6 +219,21 @@ export default function Assistant({
     setModelOverride("");
   }
   const canSend = !!message.trim() && !!status && !!savedModel.model && !busy;
+  const hasConversation = !!(
+    chat.length ||
+    pending ||
+    status?.draft ||
+    status?.layout ||
+    status?.candidates?.length
+  );
+  function closeConversation() {
+    void run(async (signal) => {
+      update(await post<State>("reset", {}, signal));
+      setChat([]);
+      setMessage("");
+      composer.current?.focus();
+    });
+  }
   function send() {
     if (!canSend) return;
     const draft = message;
@@ -453,6 +468,16 @@ export default function Assistant({
         )}
       </div>
       <div className="assistant-composer">
+        {hasConversation && (
+          <button
+            className="assistant-close-conversation"
+            type="button"
+            disabled={busy}
+            onClick={closeConversation}
+          >
+            {t.closeConversation}
+          </button>
+        )}
         <p role="status">{!status && busy ? t.checking : note}</p>
         <form
           onSubmit={(e) => {
