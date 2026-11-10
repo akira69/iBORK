@@ -122,9 +122,11 @@ In **Remote display → Display settings**, use **Copy sidebar icons to panel** 
 
 ### Schedule the backlight
 
-Use **iBORK settings → Remote display → Display settings** or **Settings → Display schedule** on the panel. Set four local start times. Each period runs until the next, including across midnight. Normal uses full brightness, Dim accepts 1–99%, and Screen off keeps telemetry running with the backlight off.
+Use **iBORK settings → Remote display → Display settings** or **Settings → Display → Edit schedule** on the panel. Set four local start times. Each period runs until the next, including across midnight. Normal uses full brightness, Dim accepts 1–99%, and Screen off keeps telemetry running with the backlight off.
 
-The default schedule turns the screen off at 1 AM, dims to 25% at 5 AM, returns to full brightness at 7 AM and dims to 25% at 7 PM. The first touch wakes the screen and consumes the tap. The schedule resumes after five idle minutes. A paired panel requires its PIN to save schedule changes.
+The default schedule turns the screen off at 1 AM, dims to 25% at 5 AM, returns to full brightness at 7 AM and dims to 25% at 7 PM. In scheduled mode, the first touch wakes the screen and consumes the tap. The schedule resumes after five idle minutes. A paired panel requires its PIN to save schedule changes.
+
+The panel's **Display** page also has a 1–100% brightness slider. Manual brightness works offline and survives restarts until you tap **Use schedule**. It applies only to that panel and does not change the shared schedule.
 
 ### Protect power actions
 
