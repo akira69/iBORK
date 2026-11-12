@@ -37,6 +37,8 @@ type panelAccess struct {
 	lastDetails    map[string]panelReadings
 	capturedAt     time.Time
 	snapshot       map[string]any
+	chartsAt       time.Time
+	charts         map[string]any
 	display        displaySchedule // protected by snapshotMu
 	saveDisplay    func([]byte) error
 	icons          map[string]panelIcon
@@ -113,16 +115,28 @@ func (s *Server) servePanel(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		now := time.Now()
+		if p.capturedAt.IsZero() {
+			p.charts = nil
+		}
 		if now.Sub(p.capturedAt) >= 10*time.Second {
 			p.snapshot = s.panelSnapshot(now)
 			p.capturedAt = now
 		}
 		snapshot := p.snapshot
+		query := r.URL.Query()
+		if query.Get("charts") != "0" || p.charts == nil {
+			if p.charts == nil || p.chartsAt != p.capturedAt {
+				p.charts = s.panelCharts(p.capturedAt, snapshot["devices"].([]panelDevice))
+				p.chartsAt = p.capturedAt
+			}
+			snapshot = maps.Clone(snapshot)
+			maps.Copy(snapshot, p.charts)
+		}
 		p.lastDetails = nil
-		if revision := r.URL.Query().Get("preload"); revision != "" {
+		if revision := query.Get("preload"); revision != "" {
 			snapshot = s.preloadPanel(snapshot, revision)
 			p.lastDetails = snapshot["details"].(map[string]panelReadings)
-		} else if id := r.URL.Query().Get("detail"); id != "" {
+		} else if id := query.Get("detail"); id != "" {
 			for _, device := range snapshot["devices"].([]panelDevice) {
 				if device.ID == id {
 					snapshot = maps.Clone(snapshot)
@@ -166,6 +180,7 @@ func (s *Server) remoteDisplay(w http.ResponseWriter, r *http.Request) {
 	if !seen.IsZero() {
 		stamp = seen.Unix()
 		snapshot = maps.Clone(p.snapshot)
+		maps.Copy(snapshot, p.charts)
 		devices := snapshot["devices"].([]panelDevice)
 		details := make(map[string]panelReadings, len(devices))
 		for _, device := range devices {
@@ -229,7 +244,7 @@ type panelDevice struct {
 func (s *Server) panelSnapshot(now time.Time) map[string]any {
 	layout := s.effectiveLayout()
 	devices := make([]panelDevice, 0, len(layout.Servers))
-	var series [][]energy.Sample
+	metered := 0
 	for _, row := range layout.Servers {
 		if !row.Included {
 			continue
@@ -238,15 +253,8 @@ func (s *Server) panelSnapshot(now time.Time) map[string]any {
 		d := s.devices[id]
 		var watts *float64
 		if d.cfg.History != nil {
-			h := d.cfg.History.MonthSnapshot(now)
-			series = append(series, h.Samples)
-			if n := len(h.Samples); n > 0 && h.Error == "" {
-				last := h.Samples[n-1]
-				age := now.Unix() - last.At
-				if age >= 0 && age <= int64(energy.MaxSampleAge/time.Second) {
-					watts = &last.Watts
-				}
-			}
+			metered++
+			watts = d.cfg.History.LatestWatts(now)
 		}
 		device := panelDevice{ID: id, Name: d.cfg.ServerName, Model: d.cfg.Model, Watts: watts, Metered: d.cfg.History != nil, Widgets: row.Widgets, Controls: slices.Contains(row.Widgets, "controls")}
 		if icon, ok := s.panel.icons[id]; ok {
@@ -255,14 +263,25 @@ func (s *Server) panelSnapshot(now time.Time) map[string]any {
 		}
 		devices = append(devices, device)
 	}
-	day, dayKwh, dayHours := energy.FleetBuckets(series, now.Unix(), 24*4, 15*60)
-	month, monthKwh, monthHours := energy.FleetBuckets(series, now.Unix(), 30*4, 6*3600)
 	return map[string]any{
 		"home":            layout.Home,
 		"usdPerKwh":       s.currentRate().USDPerKwh,
 		"displaySchedule": s.panel.display,
 		"canEditDisplay":  s.panel.pinCost != 0,
-		"capturedAt":      now.Unix(), "devices": devices, "metered": len(series), "total": len(devices),
+		"capturedAt":      now.Unix(), "devices": devices, "metered": metered, "total": len(devices),
+	}
+}
+
+func (s *Server) panelCharts(now time.Time, devices []panelDevice) map[string]any {
+	var series [][]energy.Sample
+	for _, device := range devices {
+		if device.Metered {
+			series = append(series, s.devices[device.ID].cfg.History.MonthSnapshot(now).Samples)
+		}
+	}
+	day, dayKwh, dayHours := energy.FleetBuckets(series, now.Unix(), 24*4, 15*60)
+	month, monthKwh, monthHours := energy.FleetBuckets(series, now.Unix(), 30*4, 6*3600)
+	return map[string]any{
 		"day": day, "dayKwh": dayKwh, "dayHours": dayHours,
 		"month": month, "monthKwh": monthKwh, "monthHours": monthHours,
 	}

@@ -108,6 +108,19 @@ func (h *History) Snapshot(now time.Time) Snapshot {
 func (h *History) MonthSnapshot(now time.Time) Snapshot {
 	return h.snapshot(now, retention)
 }
+func (h *History) LatestWatts(now time.Time) *float64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.readError != "" || len(h.samples) == 0 {
+		return nil
+	}
+	last := h.samples[len(h.samples)-1]
+	age := now.Unix() - last.At
+	if age < 0 || age > int64(MaxSampleAge/time.Second) {
+		return nil
+	}
+	return &last.Watts
+}
 func (h *History) snapshot(now time.Time, span time.Duration) Snapshot {
 	h.mu.Lock()
 	defer h.mu.Unlock()

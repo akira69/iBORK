@@ -30,13 +30,13 @@ type panelRefresh struct {
 }
 
 // A cold BMC scan can outlast the panel's HTTPS deadline. Let the next poll use its result.
-func (s *Server) panelCached(panelCtx context.Context, key string, ttl, maxAge time.Duration, scan *panelRefresh, read func(context.Context) (any, error)) any {
+func (s *Server) panelCached(panelCtx context.Context, key string, ttl, maxAge time.Duration, scan *panelRefresh, read func(context.Context) (any, error)) (any, bool) {
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
 	now := time.Now()
 	hit := s.cache[key]
 	if now.Before(hit.expires) {
-		return hit.value
+		return hit.value, true
 	}
 	if !scan.running && !now.Before(scan.retryAfter) && panelCtx.Err() == nil {
 		scan.running = true
@@ -52,11 +52,11 @@ func (s *Server) panelCached(panelCtx context.Context, key string, ttl, maxAge t
 			}
 		}()
 	}
-	// The panel polls every 30 seconds. Keep the last reading visible during bounded refreshes.
+	// Keep the last reading visible during bounded refreshes.
 	if now.Before(hit.expires.Add(maxAge - ttl)) {
-		return hit.value
+		return hit.value, false
 	}
-	return nil
+	return nil, false
 }
 
 type panelReadings struct {
@@ -64,6 +64,7 @@ type panelReadings struct {
 	ID          string   `json:"id"`
 	Image       []byte   `json:"image,omitempty"`
 	PowerState  string   `json:"powerState,omitempty"`
+	PowerFresh  *bool    `json:"powerFresh,omitempty"`
 	Temperature *float64 `json:"temperature"`
 	Fan         *float64 `json:"fan"`
 	FanMax      *float64 `json:"fanMax"`
@@ -72,9 +73,11 @@ type panelReadings struct {
 func (s *Server) panelDetail(ctx context.Context, device panelDevice) panelReadings {
 	detail := panelReadings{ID: device.ID}
 	if device.Controls && s.provider != nil {
-		power, _ := s.panelCached(ctx, "power", powerTTL, 40*time.Second, &s.panelPowerScan, s.readPower).(management.PowerState)
+		cached, fresh := s.panelCached(ctx, "power", powerTTL, 40*time.Second, &s.panelPowerScan, s.readPower)
+		power, _ := cached.(management.PowerState)
 		if power.State == "on" || power.State == "off" {
 			detail.PowerState = power.State
+			detail.PowerFresh = &fresh
 		}
 	}
 	wantTemp := slices.Contains(device.Widgets, "temperature")
@@ -82,7 +85,8 @@ func (s *Server) panelDetail(ctx context.Context, device panelDevice) panelReadi
 	if !wantTemp && !wantFan {
 		return detail
 	}
-	sensors, _ := s.panelCached(ctx, "sensors", sensorTTL, panelSensorMaxAge, &s.panelSensorScan, s.readSensors).([]management.Sensor)
+	cached, _ := s.panelCached(ctx, "sensors", sensorTTL, panelSensorMaxAge, &s.panelSensorScan, s.readSensors)
+	sensors, _ := cached.([]management.Sensor)
 	for _, sensor := range sensors {
 		if sensor.DetailOnly || sensor.State == "unavailable" || sensor.State == "unmapped" {
 			continue
