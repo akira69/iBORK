@@ -70,7 +70,7 @@ Open **KVM Wall → Power Overview** to see each server’s power source and sam
 
 ### Compare a group
 
-In **Central Dashboard → Edit layout**, add a power or sensor widget for one server, or choose **Combined power** and select a group. CPU cards can show multiple temperatures; highest fan RPM means the highest currently valid reading, not rated maximum. Different widgets can use overlapping groups.
+In **Central Dashboard**, choose **Add widget** to get started. Choose **Edit layout** if the dashboard already has widgets. Add a power or sensor widget for one server, or choose **Combined power** and select a group. CPU cards can show multiple temperatures; highest fan RPM means the highest currently valid reading, not rated maximum. Different widgets can use overlapping groups.
 
 Last-hour charts in Central Dashboard and Power Overview add each server's valid recorded intervals independently. Missing servers no longer suppress other history. Lines break when contributors change or samples are more than 150 seconds apart. Incomplete recorded energy and cost are labeled **Partial**, and missing data is never counted as zero. Coverage measures recorded server-time: three complete histories out of four servers means 75%. Expand **History details** for contributors and missing-data explanations. Paired-display fleet totals keep their existing common-interval behavior.
 

@@ -51,6 +51,9 @@
   min-height: 0;
   flex: 1;
 }
+.fleet-cell-label {
+  display: none;
+}
 .fleet-history {
   display: grid;
   gap: 5px;
@@ -89,5 +92,39 @@
   .fleet-overview td {
     padding: 6px 3px;
     font-size: 0.85rem;
+  }
+}
+@media (max-width: 420px) {
+  .fleet-overview thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .fleet-overview tbody tr {
+    display: grid;
+    gap: 4px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .fleet-overview tbody th,
+  .fleet-overview td {
+    border: 0;
+    padding: 0;
+  }
+  .fleet-overview tbody th {
+    color: inherit;
+    text-transform: none;
+    letter-spacing: normal;
+  }
+  .fleet-overview td {
+    display: grid;
+    grid-template-columns: 6em minmax(0, 1fr);
+    gap: 8px;
+  }
+  .fleet-cell-label {
+    display: block;
+    color: var(--muted);
   }
 }

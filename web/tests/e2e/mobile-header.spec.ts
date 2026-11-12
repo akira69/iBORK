@@ -77,6 +77,9 @@ test("mobile switches servers from console, settings and wall in a compact heade
     await expect(
       page.getByRole("button", { name: "Console", exact: true }),
     ).toHaveAttribute("aria-current", "page");
+    await expect(
+      page.getByRole("button", { name: "Server settings", exact: true }),
+    ).toBeInViewport({ ratio: 1 });
     const box = (await header.boundingBox())!;
     expect(box.height).toBeLessThanOrEqual(130);
     for (const button of await header.getByRole("button").all()) {

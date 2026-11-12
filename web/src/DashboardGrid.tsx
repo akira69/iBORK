@@ -18,6 +18,7 @@ import { createPortal } from "react-dom";
 import {
   Grip,
   Pencil,
+  Plus,
   RotateCcw,
   X,
   Minimize2,
@@ -650,19 +651,33 @@ export function DashboardGrid(props: Props) {
     }
     saveGeometry();
   }
+  const addFirstWidget = props.fleet && !editing && !layout.widgets.length;
+  const editLabel = editing
+    ? "Done"
+    : addFirstWidget
+      ? "Add widget"
+      : "Edit layout";
   const toolbar = (
     <div className="dashboard-actions">
       <button
-        aria-label={editing ? "Done" : "Edit layout"}
+        className={addFirstWidget ? "primary" : undefined}
+        aria-label={editLabel}
         disabled={draft?.showCurrent || controller?.busy}
-        title={editing ? "Done editing layout" : "Edit layout"}
+        title={editing ? "Done editing layout" : editLabel}
         aria-pressed={editing}
         onClick={() => {
           if (!editing) props.onEditStart?.();
           setEditing((v) => !v);
         }}
       >
-        <Pencil size={18} />
+        {addFirstWidget ? (
+          <>
+            <Plus size={18} />
+            Add widget
+          </>
+        ) : (
+          <Pencil size={18} />
+        )}
       </button>
       <button
         className="quiet"

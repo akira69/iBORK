@@ -540,6 +540,11 @@ function Dashboard({
   const serverName = display.name || device.name;
   const bmcOnline = !!power.data && !power.error;
   const connected = state === "connected" || state === "no-signal";
+  const kvmPhase = device.hasJetKVM
+    ? jetSnapshot.phase
+    : device.hasVNC
+      ? vncSnapshot.phase
+      : cometSnapshot.phase;
   const connectionStatus = (
     <div className="connection-status" aria-label="Connections">
       {[
@@ -547,7 +552,7 @@ function Dashboard({
           ? [
               {
                 label: "IPMI",
-                online: bmcOnline,
+                tone: bmcOnline ? "online" : "offline",
                 text: bmcOnline
                   ? "Online"
                   : power.loading
@@ -560,7 +565,7 @@ function Dashboard({
           ? [
               {
                 label: "Glances",
-                online: !!sensors.data && !sensors.error,
+                tone: sensors.data && !sensors.error ? "online" : "offline",
                 text: sensors.error
                   ? "Unavailable"
                   : sensors.loading
@@ -573,36 +578,27 @@ function Dashboard({
           ? [
               {
                 label: "KVM",
-                online: device.hasJetKVM
-                  ? connected
-                  : device.hasVNC
-                    ? vncStatus === "Online"
-                    : ["live", "no-signal"].includes(cometSnapshot.phase),
+                tone:
+                  kvmPhase === "live"
+                    ? "online"
+                    : kvmPhase === "no-signal"
+                      ? "no-signal"
+                      : "offline",
                 text:
-                  !device.hasJetKVM && !device.hasVNC
-                    ? cometSnapshot.phase === "live"
-                      ? "Online"
-                      : cometSnapshot.phase === "no-signal"
-                        ? "No signal"
-                        : ["connecting", "reconnecting"].includes(
-                              cometSnapshot.phase,
-                            )
-                          ? "Linking"
-                          : "Offline"
-                    : !device.hasJetKVM
-                      ? vncStatus
-                      : connected
-                        ? "Online"
-                        : state === "connecting" || state === "reconnecting"
-                          ? "Linking"
-                          : "Offline",
+                  kvmPhase === "live"
+                    ? "Online"
+                    : kvmPhase === "no-signal"
+                      ? "Connected · No video"
+                      : kvmPhase === "connecting" || kvmPhase === "reconnecting"
+                        ? "Linking"
+                        : "Offline",
               },
             ]
           : []),
       ].map((item) => (
         <div
           key={item.label}
-          className={item.online ? "online" : "offline"}
+          className={item.tone}
           aria-label={`${item.label}: ${item.text}`}
           title={`${item.label}: ${item.text}`}
         >

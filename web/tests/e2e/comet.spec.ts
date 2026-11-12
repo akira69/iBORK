@@ -269,7 +269,7 @@ test("online device with no_signal shows keyboard-ready console and recovers to 
     0,
   );
   await expect(
-    page.getByLabel("KVM: No signal", { exact: true }),
+    page.getByLabel("KVM: Connected · No video", { exact: true }),
   ).toBeVisible();
   await page.screenshot({
     path: "test-results/screenshots/comet-no-signal.png",

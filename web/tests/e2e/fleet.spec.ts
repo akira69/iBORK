@@ -94,7 +94,7 @@ async function fleet(page: Page) {
 test("Power Overview restores without connecting consoles and reports partial failures independently", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 320, height: 844 });
   const state = await fleet(page);
   const overview = page.getByRole("region", {
     name: "Power Overview",
@@ -126,6 +126,10 @@ test("Power Overview restores without connecting consoles and reports partial fa
   await expect(
     overview.locator(".fleet-current").getByText("1 of 3 reporting"),
   ).toBeVisible();
+  const row = overview.getByRole("row", { name: /Rack B/ });
+  const name = (await row.getByRole("rowheader").boundingBox())!;
+  const watts = (await row.getByRole("cell").first().boundingBox())!;
+  expect(watts.y).toBeGreaterThanOrEqual(name.y + name.height);
   expect(state.consoleRequests).toBe(0);
   await page.getByRole("button", { name: "Consoles", exact: true }).click();
   await expect.poll(() => state.consoleRequests).toBe(1);
@@ -140,7 +144,7 @@ test("Central Dashboard persists overlapping groups, sensor, keyboard geometry a
     .click();
   const dashboard = page.getByRole("region", { name: "KVM wall", exact: true });
   await dashboard
-    .getByRole("button", { name: "Edit layout", exact: true })
+    .getByRole("button", { name: "Add widget", exact: true })
     .click();
   const editor = dashboard.getByRole("region", { name: "Widget catalog" });
   const add = editor.getByRole("button", { name: "Add widget", exact: true });
@@ -269,7 +273,7 @@ test("Central Dashboard adds a KVM without connecting until explicitly requested
     exact: true,
   });
   await dashboard
-    .getByRole("button", { name: "Edit layout", exact: true })
+    .getByRole("button", { name: "Add widget", exact: true })
     .click();
   await dashboard
     .getByRole("combobox", { name: "Source", exact: true })
