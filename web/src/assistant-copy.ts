@@ -10,6 +10,7 @@ const en = {
   closeConversation: "Close conversation",
   provider: "Model connection",
   setupModel: "Choose a model in Assistant settings to start chatting.",
+  setupAction: "Set up a model",
   endpoint: "OpenAI-compatible endpoint (/v1)",
   model: "Default model ID",
   chatModel: "Chat model",
@@ -70,6 +71,7 @@ const en = {
 const es: typeof en = {
   title: "Asistente de iBORK",
   setupModel: "Elige un modelo en los ajustes del asistente para empezar.",
+  setupAction: "Configurar un modelo",
   settings: "Ajustes del asistente",
   shortTabs: { provider: "Modelo", scope: "Red", connect: "MCP" },
   copyConfig: "Copiar configuración MCP",

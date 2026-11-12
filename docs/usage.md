@@ -20,7 +20,7 @@ After your first visit, this browser remembers your last server and page. Sign i
 
 ## iBORK Assistant
 
-Open the brain icon at the right edge of any signed-in page to chat. Ask the Assistant to find devices, pair a KVM or create and arrange the dashboard you are viewing. The gear in the chat header opens **Assistant settings**.
+Open the brain icon in the workspace header to chat. Ask the Assistant to find devices, pair a KVM or create and arrange the dashboard you are viewing. The gear in the chat header opens **Assistant settings**.
 
 ### Chat with a model
 

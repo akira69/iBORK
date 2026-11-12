@@ -1855,7 +1855,9 @@ input[role="switch"]:checked::before {
 .wall-heading button[hidden] {
   display: none;
 }
-.settings-grid select {
+.settings-grid select,
+.connection-fields select,
+.fleet-catalog select {
   min-height: 40px;
   padding: 8px;
   border: 1px solid var(--line);
@@ -2074,8 +2076,8 @@ input[role="switch"]:checked::before {
 @media (max-width: 520px) {
   .topbar {
     display: grid;
-    grid-template-columns: 36px minmax(0, 1fr) auto;
-    gap: 8px;
+    grid-template-columns: 36px minmax(0, 1fr) auto auto;
+    gap: 8px 4px;
     padding: 10px 12px;
   }
   .topbar > .vendor-logo,
@@ -2099,6 +2101,16 @@ input[role="switch"]:checked::before {
   }
   .topbar .workspace-heading {
     display: block;
+  }
+  .topbar .connection-status {
+    column-gap: 4px;
+  }
+  .topbar .connection-status:has(> :nth-child(2)) {
+    min-height: 30px;
+    align-content: start;
+  }
+  .topbar .connection-status > div {
+    white-space: nowrap;
   }
   .topbar .workspace-title h1 {
     font-size: 17px;

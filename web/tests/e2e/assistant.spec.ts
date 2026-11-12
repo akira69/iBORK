@@ -68,7 +68,7 @@ test("desktop chat keeps its draft and transcript while the operator navigates",
   await expect(launcher).toBeFocused();
 });
 
-test("empty fleet opens assistant settings from the mobile Remote display page", async ({
+test("empty fleet can set up a model from the mobile Remote display page", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 320, height: 640 });
@@ -87,7 +87,7 @@ test("empty fleet opens assistant settings from the mobile Remote display page",
   expect(await drawer.evaluate((node) => node.scrollWidth)).toBeLessThanOrEqual(
     320,
   );
-  await drawer.getByRole("button", { name: "Assistant settings" }).click();
+  await drawer.getByRole("button", { name: "Set up a model" }).click();
   await expect(
     page.getByRole("tab", { name: "Model connection" }),
   ).toHaveAttribute("aria-selected", "true");
@@ -95,6 +95,21 @@ test("empty fleet opens assistant settings from the mobile Remote display page",
   await expect(page.getByLabel("MCP JSON")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Remote display" }),
+  ).toBeVisible();
+});
+
+test("mobile Assistant leaves the connected console controls reachable", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 680 });
+  await setup(page, true, true, false, true);
+  await expect(page.getByText("No HDMI signal", { exact: true })).toBeVisible();
+  await expect(page.locator(".topbar .assistant-tab")).toBeInViewport();
+  await page
+    .getByRole("button", { name: "Disconnect console", exact: true })
+    .click();
+  await expect(
+    page.getByText("Console not connected", { exact: true }),
   ).toBeVisible();
 });
 

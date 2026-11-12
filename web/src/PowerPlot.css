@@ -39,6 +39,9 @@
   gap: 6px;
   padding: var(--widget-padding, 12px);
 }
+.auto-fit-history > .fleet-history {
+  height: auto;
+}
 .widget-body > .fleet-history > :not(.power-plot),
 .power-chart > :not(.power-plot) {
   flex-shrink: 0;

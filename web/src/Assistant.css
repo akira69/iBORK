@@ -1,16 +1,20 @@
 .assistant-tab {
-  position: fixed;
-  z-index: 12;
-  right: 0;
-  top: 45%;
-  gap: 0;
-  min-height: 46px;
-  padding: 5px 4px 5px 0;
-  border-right: 0;
-  border-radius: 12px 0 0 12px;
-  border-color: #54776f;
-  background: var(--panel);
-  box-shadow: 0 4px 18px #0006;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  flex: none;
+  justify-content: center;
+}
+.empty-fleet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+@media (max-width: 520px) {
+  .topbar .assistant-tab {
+    grid-column: 4;
+    grid-row: 1;
+  }
 }
 .assistant-tab img,
 .assistant-drawer header img {
@@ -39,7 +43,7 @@
     z-index: 11;
   }
 }
-.assistant-tab:has(+ .assistant-drawer[open]) {
+#root:has(.assistant-drawer[open]) .assistant-tab {
   visibility: hidden;
 }
 .assistant-drawer[open] {
@@ -102,6 +106,13 @@
   justify-content: center;
   gap: 0.45rem;
   margin-block: auto;
+}
+.assistant-setup {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  margin: auto;
+  text-align: center;
 }
 .assistant-prompts button {
   border-radius: 999px;
@@ -293,6 +304,7 @@
 }
 .assistant-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 3px;
   padding: 3px;
   border-radius: 7px;
@@ -304,11 +316,19 @@
   background: transparent;
   border-color: transparent;
   color: #b7c8c9;
+  min-height: 40px;
+  padding-inline: 8px;
+  white-space: nowrap;
 }
 .assistant-tabs button[aria-selected="true"] {
   background: #29423d;
   color: #b3eed9;
   border-color: #46685e;
+}
+@media (max-width: 360px) {
+  .assistant-tabs button svg {
+    display: none;
+  }
 }
 .assistant-copy {
   position: relative;
