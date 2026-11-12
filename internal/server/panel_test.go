@@ -124,7 +124,7 @@ func TestPanelCredentialsScopeAndSnapshot(t *testing.T) {
 		Day, Month       []*float64
 		DayKwh, MonthKwh *float64
 	}
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &v) != nil || v.Metered != 1 || v.Total != 2 || len(v.Day) != 24 || len(v.Month) != 30 || len(v.Devices) != 2 || v.Devices[0].Controls || v.Devices[0].Watts != nil || v.DayKwh != nil || v.MonthKwh != nil || strings.Contains(w.Body.String(), "bmcHost") {
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &v) != nil || v.Metered != 1 || v.Total != 2 || len(v.Day) != 96 || len(v.Month) != 120 || len(v.Devices) != 2 || v.Devices[0].Controls || v.Devices[0].Watts != nil || v.DayKwh != nil || v.MonthKwh != nil || strings.Contains(w.Body.String(), "bmcHost") {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	r.Header.Set("Origin", "https://untrusted.invalid")
@@ -305,7 +305,10 @@ func TestPanelCapturedReadingsAndCache(t *testing.T) {
 	if v.CapturedAt < now.Unix() || v.Devices[0].Watts == nil || *v.Devices[0].Watts != 200 || v.Devices[1].Watts != nil {
 		t.Fatalf("unexpected snapshot: %+v", v)
 	}
-	if *v.Day[23] != 150 || *v.Month[29] != 150 || v.DayHours != 1.0/60 || v.MonthHours != 1.0/60 || v.DayKwh != 0.0025 || v.MonthKwh != 0.0025 {
+	if len(v.Day) != 96 || len(v.Month) != 120 {
+		t.Fatalf("unexpected chart lengths: day=%d, month=%d", len(v.Day), len(v.Month))
+	}
+	if *v.Day[95] != 150 || *v.Month[119] != 150 || v.DayHours != 1.0/60 || v.MonthHours != 1.0/60 || v.DayKwh != 0.0025 || v.MonthKwh != 0.0025 {
 		t.Fatalf("unexpected coverage: %+v", v)
 	}
 	s.cfg.History = energy.MemoryOnly()

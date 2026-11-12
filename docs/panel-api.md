@@ -38,7 +38,7 @@ Send `Authorization: Bearer <token>` with every request. The native client may o
 | `metered`, `total` | Number of included servers with power collectors and total included servers. |
 | `home` | Ordered visible Home sections. Valid values are `power`, `day`, `month` and `servers`. |
 | `detail` | Optional readings for the included server requested with `?detail=<id>`. Temperature is in °C and `fan` and `fanMax` are the lowest and highest fan speeds in RPM. When controls are enabled, `powerState` reports `on` or `off` from chassis status. A missing state or null reading is unavailable. |
-| `day`, `month` | Rolling 24-hour and 30-day windows ending at the observation time. Each contains oldest-first hourly or daily time-weighted mean watts. A bucket with zero observed duration is null. |
+| `day`, `month` | Rolling 24-hour and 30-day windows ending at the observation time. `day` has 96 15-minute buckets. `month` has 120 six-hour buckets. Each contains oldest-first time-weighted mean watts. A bucket with zero observed duration is null. |
 | `dayKwh`, `monthKwh` | Energy from intervals observed in common by every included collector. Null when no interval is covered. |
 | `dayHours`, `monthHours` | Hours of common observed time in each window. Multiply measured kWh by the configured price per kWh for the cost over these hours. |
 | `usdPerKwh` | Shared fleet electricity rate, from 0 to 1000 USD per kWh. Operators read or update it through **GET /api/electricity-rate** and **PUT /api/electricity-rate** using an authenticated web session. PUT requires a CSRF token and a JSON body such as `{"usdPerKwh":0.20}`. |
@@ -53,6 +53,8 @@ The single-server `?detail=<id>` route requests the hottest mapped temperature a
 **GET /api/panel-layout** returns the effective layout for the authenticated web operator. **PUT /api/panel-layout** requires the operator's CSRF token, the current `revision`, at least one ordered `home` section and a `servers` row for every current inventory ID. Each row supplies `id`, `included` and its ordered `widgets` from `power`, `temperature`, `fan` and `controls`. The response lists each server's `available` widgets. Reload the layout after an HTTP 409 conflict.
 
 **PUT /api/v1/panel/display** accepts the current `revision`, four `periods` and the current panel `pin`. It uses the same PIN attempt limit as power controls. HTTP 200 confirms a durable save. HTTP 409 indicates a newer revision. Refresh before editing again. The authenticated operator uses **GET /api/panel-display** to read the schedule and **PUT /api/panel-display** with CSRF protection to update it without a panel PIN.
+
+The CrowPanel normally polls every 15 seconds while the screen is on. Current fleet power sums the latest available readings, and the reporting count shows how many configured meters contributed. The service checks each collector every 30 seconds. MQTT and Home Assistant readings also depend on when the source reports a measurement.
 
 Each collector needs two consecutive observations at most 150 seconds apart. The service linearly interpolates between them, clips to the common interval, and integrates across bucket boundaries. Unmetered devices are excluded. An assigned collector with missing readings reduces coverage. Persistent history accumulates for 30 days after upgrade, with existing retained readings available immediately. The web energy endpoint continues to return its seven-day window.
 

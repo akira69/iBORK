@@ -44,7 +44,7 @@ async function editor(page: Page) {
             name,
             model: "",
             metered: true,
-            watts: [50, 75, 100][i],
+            watts: [50, 75, null][i],
             controls: true,
           })),
           details: {
@@ -55,8 +55,8 @@ async function editor(page: Page) {
               powerState: "on",
             },
           },
-          day: Array(24).fill(225),
-          month: Array(30).fill(225),
+          day: Array(96).fill(225),
+          month: Array(120).fill(225),
           dayHours: 24,
           monthHours: 720,
           dayKwh: 5.4,
@@ -140,7 +140,19 @@ test("layout preview follows visible order and server capabilities, and persists
   await expect(
     preview.getByRole("button", { name: "Preview DEMO-A" }),
   ).toBeVisible();
-  await expect(preview.locator(".cl-power")).toContainText("225 W");
+  await expect(preview.locator(".cl-power")).toContainText(
+    "Current fleet power",
+  );
+  await expect(preview.locator(".cl-power")).toContainText("125 W");
+  await expect(preview.locator(".cl-power")).toContainText("2/3 reporting");
+  for (const [name, count] of [
+    ["24-hour chart preview", 96],
+    ["30-day chart preview", 120],
+  ] as const) {
+    const lines = preview.getByRole("region", { name }).locator("svg line");
+    await expect(lines).toHaveCount(count - 1);
+    await expect(lines.last()).toHaveAttribute("x2", "344");
+  }
   await controls.getByRole("checkbox", { name: "30-day chart" }).uncheck();
   await page.screenshot({ path: shot("desktop-home.png") });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -164,7 +176,8 @@ test("layout preview follows visible order and server capabilities, and persists
     .uncheck();
   await controls.getByRole("button", { name: "Move DEMO-C up" }).click();
   await controls.getByRole("button", { name: "Move DEMO-C up" }).click();
-  await expect(preview.locator(".cl-power")).toContainText("150 W");
+  await expect(preview.locator(".cl-power")).toContainText("50 W");
+  await expect(preview.locator(".cl-power")).toContainText("1/2 reporting");
   await expect(
     preview.locator(".cl-tiles button").first(),
   ).toHaveAccessibleName("Preview DEMO-C");
@@ -287,7 +300,7 @@ test("dragging a chart separates its row and a fleet with all servers hidden can
   for (const box of await servers.getByRole("checkbox").all())
     await box.uncheck();
   await expect(preview.getByText("No servers on this panel")).toBeVisible();
-  await expect(preview.locator(".cl-power")).toContainText("0 metered");
+  await expect(preview.locator(".cl-power")).toContainText("No meters");
   await page.getByRole("button", { name: "Save layout" }).click();
   await expect(page.getByRole("status")).toHaveText("Layout saved.");
   expect(api.writes.at(-1)).toMatchObject({

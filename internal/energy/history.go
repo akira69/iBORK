@@ -114,14 +114,14 @@ func (h *History) snapshot(now time.Time, span time.Duration) Snapshot {
 	h.trim(now)
 	source := h.source
 	if source == "" {
-		source = "DCMI system power · sampled once per minute"
+		source = "DCMI system power · sampled every 30 seconds"
 	}
 	cutoff := now.Add(-span).Unix()
 	first := sort.Search(len(h.samples), func(i int) bool { return h.samples[i].At >= cutoff })
 	return Snapshot{Samples: append([]Sample{}, h.samples[first:]...), Now: now.Unix(), Error: h.readError, StorageError: h.storageError, Source: source}
 }
 func (h *History) Run(ctx context.Context, read Reader) {
-	timer := time.NewTicker(time.Minute)
+	timer := time.NewTicker(30 * time.Second)
 	defer timer.Stop()
 	for ctx.Err() == nil {
 		point, err := read(ctx)

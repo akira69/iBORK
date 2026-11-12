@@ -383,13 +383,14 @@
   top: 34px;
 }
 .cl-power em {
-  left: 634px;
+  left: 608px;
   top: 17px;
   border: 1px solid #64efc4;
   border-radius: 10px;
-  width: 118px;
+  width: 144px;
   height: 36px;
   padding: 6px 12px;
+  text-align: center;
 }
 .cl-chart-row {
   display: flex;
