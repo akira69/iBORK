@@ -327,9 +327,10 @@ export function PanelLayoutPreview({
           <>
             <div className="cl-switch" aria-label="Power control preview">
               <h4>Power control</h4>
-              {!online && (state === "on" || state === "off") && (
-                <small>Last known</small>
-              )}
+              {(!online || !data?.powerFresh) &&
+                (state === "on" || state === "off") && (
+                  <small>Last known</small>
+                )}
               <span>Power on</span>
               {state === "on" || state === "off" ? (
                 <img

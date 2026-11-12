@@ -291,12 +291,19 @@ func TestPanelSwitchRestingState(t *testing.T) {
 		if read() != "off" {
 			t.Fatal("standby server showed on")
 		}
+		if detail := s.panelDetail(ctx, device); detail.PowerFresh == nil || !*detail.PowerFresh {
+			t.Fatal("fresh chassis reading not marked fresh")
+		}
+		cancel()
+		time.Sleep(6 * time.Second)
+		if detail := s.panelDetail(ctx, device); detail.PowerState != "off" || detail.PowerFresh == nil || *detail.PowerFresh {
+			t.Fatalf("cached chassis reading marked fresh: %+v", detail)
+		}
 		device.Controls = false
 		if read() != "" {
 			t.Fatal("power state without a switch")
 		}
 		device.Controls = true
-		cancel()
 		time.Sleep(41 * time.Second)
 		if read() != "" {
 			t.Fatal("expired power state shown")

@@ -53,6 +53,7 @@ async function editor(page: Page) {
               fan: 900,
               fanMax: 1300,
               powerState: "on",
+              powerFresh: false,
             },
           },
           day: Array(96).fill(225),
@@ -145,6 +146,14 @@ test("layout preview follows visible order and server capabilities, and persists
   );
   await expect(preview.locator(".cl-power")).toContainText("125 W");
   await expect(preview.locator(".cl-power")).toContainText("2/3 reporting");
+  await preview.getByRole("button", { name: "Preview DEMO-A" }).click();
+  await expect(
+    preview.getByRole("img", { name: "Chassis power on" }),
+  ).toBeVisible();
+  await expect(preview.getByText("Last known", { exact: true })).toBeVisible();
+  await preview
+    .getByRole("button", { name: "Back in display preview" })
+    .click();
   for (const [name, count] of [
     ["24-hour chart preview", 96],
     ["30-day chart preview", 120],

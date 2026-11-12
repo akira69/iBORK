@@ -19,6 +19,7 @@ export type RemoteDisplayStatus = {
         fan?: number | null;
         fanMax?: number | null;
         powerState?: string;
+        powerFresh?: boolean;
         image?: string;
       }
     >;

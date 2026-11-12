@@ -311,6 +311,16 @@ func TestPanelCapturedReadingsAndCache(t *testing.T) {
 	if *v.Day[95] != 150 || *v.Month[119] != 150 || v.DayHours != 1.0/60 || v.MonthHours != 1.0/60 || v.DayKwh != 0.0025 || v.MonthKwh != 0.0025 {
 		t.Fatalf("unexpected coverage: %+v", v)
 	}
+	compact := panelRequest(s, "GET", "/api/v1/panel?charts=0", "", "Bearer "+key)
+	var current map[string]json.RawMessage
+	if compact.Code != 200 || json.Unmarshal(compact.Body.Bytes(), &current) != nil || current["devices"] == nil {
+		t.Fatalf("missing current readings: %s", compact.Body.String())
+	}
+	for _, field := range []string{"day", "month", "dayKwh", "monthKwh", "dayHours", "monthHours"} {
+		if _, exists := current[field]; exists {
+			t.Fatalf("compact poll returned %s", field)
+		}
+	}
 	s.cfg.History = energy.MemoryOnly()
 	if fetch() != first {
 		t.Fatal("cache miss on immediate second GET")
