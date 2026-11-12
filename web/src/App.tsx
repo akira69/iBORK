@@ -264,13 +264,16 @@ export function App() {
       <DeviceWorkspace
         empty={
           <AssistantDrawer csrf={csrf}>
-            {({ openAssistant, settings, settingsRequest }) => (
+            {({ openAssistant, launcher, settings, settingsRequest }) => (
               <main className="main app-settings">
+                <header className="empty-fleet-header">
+                  <img src="/ibork.svg" alt="iBORK" width="64" height="64" />
+                  {launcher}
+                </header>
                 <PanelLayoutSettings
                   csrf={csrf}
                   settingsRequest={settingsRequest}
                 >
-                  <img src="/ibork.svg" alt="iBORK" width="64" height="64" />
                   <h1>Information</h1>
                   <Information emptyFleet />
                   <h2 id="add-first-server" tabIndex={-1}>
@@ -902,6 +905,7 @@ function Dashboard({
             <LogOut size={15} />
             Sign out
           </button>
+          {assistant.launcher}
         </header>
         {view === "wall" && (
           <KVMWall

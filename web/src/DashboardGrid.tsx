@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useRef,
   useId,
@@ -85,15 +86,29 @@ type Board = Props & {
   narrow: boolean;
   remove: (widget: DashboardWidget) => void;
   update: (widget: DashboardWidget, patch: Partial<DashboardWidget>) => void;
-  fit: (widget: DashboardWidget) => void;
+  fit: (widget: DashboardWidget, narrowOnly?: boolean) => void;
 };
 const BoardContext = createContext<Board | null>(null);
 
 function Widget({ id }: Record<string, unknown>) {
   const board = useContext(BoardContext)!;
   const editor = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   const editorId = useId();
   const widget = board.layout.widgets.find((w) => w.id === id);
+  const fitHistory = useEffectEvent(() => {
+    if (widget) board.fit(widget, true);
+  });
+  const autoFitHistory =
+    board.narrow && !!board.fleet && widget?.kind === "power-hour";
+  useEffect(() => {
+    if (!autoFitHistory) return;
+    const history = body.current?.querySelector(".fleet-history");
+    if (!history) return;
+    const observer = new ResizeObserver(() => fitHistory());
+    observer.observe(history);
+    return () => observer.disconnect();
+  }, [autoFitHistory]);
   if (!widget) return null;
   const title =
     board.fleet?.title(widget) ?? widget.title ?? catalog[widget.kind].title;
@@ -324,7 +339,8 @@ function Widget({ id }: Record<string, unknown>) {
         )}
       </header>
       <div
-        className={`widget-body widget-${widget.kind}`}
+        ref={body}
+        className={`widget-body widget-${widget.kind}${autoFitHistory ? " auto-fit-history" : ""}`}
         inert={
           board.previewing &&
           ![
@@ -469,13 +485,23 @@ export function DashboardGrid(props: Props) {
     : savedLayout;
   const current = useRef(layout);
   const loadingGrid = useRef(false);
+  const mobileHistorySized = useRef(false);
   useLayoutEffect(() => {
-    if (current.current === layout) return;
+    const grid = gridRef.current?.getGrid();
+    // GridStack carries item heights across column changes.
+    if (!narrow && mobileHistorySized.current) grid?.onResize();
+    const restoreHeight =
+      !narrow && mobileHistorySized.current && grid?.getColumn() === 12;
+    if (current.current === layout && !restoreHeight) return;
     current.current = layout;
     loadingGrid.current = true;
-    gridRef.current?.getGrid()?.load(layout.widgets.map(nodeFor));
-    loadingGrid.current = false;
-  }, [layout]);
+    try {
+      grid?.load(layout.widgets.map(nodeFor));
+      if (restoreHeight) mobileHistorySized.current = false;
+    } finally {
+      loadingGrid.current = false;
+    }
+  }, [layout, narrow]);
   const [options] = useState<GridStackOptions>(() => ({
     column: 12,
     float: true,
@@ -522,7 +548,13 @@ export function DashboardGrid(props: Props) {
     setError(writeLayout(props.storageKey, next));
   }
   function saveGeometry() {
-    if (loadingGrid.current || draft?.showCurrent || controller?.busy) return;
+    if (
+      loadingGrid.current ||
+      mobileHistorySized.current ||
+      draft?.showCurrent ||
+      controller?.busy
+    )
+      return;
     const grid = gridRef.current?.getGrid();
     if (!grid || grid.getColumn() !== 12) return;
     // GridStack omits dimensions equal to their minimum when serializing.
@@ -635,13 +667,14 @@ export function DashboardGrid(props: Props) {
     gridRef.current?.getGrid()?.load(resetLayout.widgets.map(nodeFor));
     setResetting(false);
   }
-  function fit(widget: DashboardWidget) {
-    if (draft?.showCurrent || controller?.busy) return;
+  function fit(widget: DashboardWidget, narrowOnly = false) {
+    if (!narrowOnly && (draft?.showCurrent || controller?.busy)) return;
     const grid = gridRef.current?.getGrid();
     const item = grid
       ?.getGridItems()
       .find((el) => el.gridstackNode?.id === widget.id);
-    if (!grid || !item) return;
+    if (!grid || !item || (narrowOnly && grid.getColumn() !== 1)) return;
+    const originalHeight = item.gridstackNode?.h;
     // Measure the reading layout, excluding editor controls and stretched bodies.
     item.classList.add("widget-measuring");
     try {
@@ -649,7 +682,11 @@ export function DashboardGrid(props: Props) {
     } finally {
       item.classList.remove("widget-measuring");
     }
-    saveGeometry();
+    if (narrowOnly) {
+      mobileHistorySized.current ||= item.gridstackNode?.h !== originalHeight;
+    } else {
+      saveGeometry();
+    }
   }
   const addFirstWidget = props.fleet && !editing && !layout.widgets.length;
   const editLabel = editing

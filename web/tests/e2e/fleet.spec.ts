@@ -94,7 +94,6 @@ async function fleet(page: Page) {
 test("Power Overview restores without connecting consoles and reports partial failures independently", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 320, height: 844 });
   const state = await fleet(page);
   const overview = page.getByRole("region", {
     name: "Power Overview",
@@ -103,6 +102,9 @@ test("Power Overview restores without connecting consoles and reports partial fa
   await expect(
     overview.locator(".fleet-current").getByText("200 W", { exact: true }),
   ).toBeVisible();
+  const historyItem = overview.locator('[gs-id="fleet-hour"]');
+  const desktopHeight = (await historyItem.getAttribute("gs-h"))!;
+  await page.setViewportSize({ width: 320, height: 844 });
   expect(state.energyRequests).toBe(2);
   await expect(
     overview.locator(".fleet-current").getByText("2 of 3 reporting"),
@@ -130,6 +132,15 @@ test("Power Overview restores without connecting consoles and reports partial fa
   const name = (await row.getByRole("rowheader").boundingBox())!;
   const watts = (await row.getByRole("cell").first().boundingBox())!;
   expect(watts.y).toBeGreaterThanOrEqual(name.y + name.height);
+  const details = overview.getByText("History details", { exact: true });
+  const card = overview.locator("#widget-fleet-hour .widget-body");
+  const fits = () =>
+    card.evaluate((el) => el.scrollHeight <= el.clientHeight + 1);
+  await expect.poll(fits).toBe(true);
+  await details.click();
+  await expect.poll(fits).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(historyItem).toHaveAttribute("gs-h", desktopHeight);
   expect(state.consoleRequests).toBe(0);
   await page.getByRole("button", { name: "Consoles", exact: true }).click();
   await expect.poll(() => state.consoleRequests).toBe(1);
@@ -147,6 +158,9 @@ test("Central Dashboard persists overlapping groups, sensor, keyboard geometry a
     .getByRole("button", { name: "Add widget", exact: true })
     .click();
   const editor = dashboard.getByRole("region", { name: "Widget catalog" });
+  expect(
+    (await editor.getByLabel("Source").boundingBox())!.height,
+  ).toBeGreaterThanOrEqual(40);
   const add = editor.getByRole("button", { name: "Add widget", exact: true });
   await editor.getByLabel("Rack A", { exact: true }).check();
   await editor.getByLabel("Rack B", { exact: true }).check();

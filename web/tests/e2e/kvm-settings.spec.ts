@@ -82,6 +82,7 @@ for (const source of [
 test("empty inventory keeps app settings and add connection available", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   await setup(page, true, false);
   await page.route("**/api/devices", (route) => route.fulfill({ json: [] }));
   await page.route("**/api/device-settings", (route) =>
@@ -91,9 +92,11 @@ test("empty inventory keeps app settings and add connection available", async ({
   await expect(
     page.getByRole("heading", { name: "iBORK Settings" }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("combobox", { name: "Device type", exact: true }),
-  ).toBeVisible();
+  const deviceType = page.getByRole("combobox", {
+    name: "Device type",
+    exact: true,
+  });
+  expect((await deviceType.boundingBox())!.height).toBeGreaterThanOrEqual(40);
   await expect(
     page.getByRole("heading", { name: "Dashboard login password" }),
   ).toBeVisible();

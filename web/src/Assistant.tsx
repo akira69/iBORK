@@ -54,12 +54,14 @@ export default function Assistant({
   settingsRequest,
   opened,
   onLayout,
+  onSettings,
 }: {
   csrf: string;
   host: HTMLDivElement | null;
   settingsRequest: number;
   opened: boolean;
   onLayout?: (id: string) => void;
+  onSettings: () => void;
 }) {
   const dashboards = useDashboardAssistant();
   const t = assistantCopy(navigator.language);
@@ -219,6 +221,7 @@ export default function Assistant({
     setModelOverride("");
   }
   const canSend = !!message.trim() && !!status && !!savedModel.model && !busy;
+  const needsModel = !!status && !savedModel.model;
   const hasConversation = !!(
     chat.length ||
     pending ||
@@ -305,7 +308,17 @@ export default function Assistant({
         tabIndex={0}
       >
         {retryStatus}
+        {needsModel && (
+          <div className="assistant-setup">
+            <h3>{t.noModel}</h3>
+            <p>{t.setupModel}</p>
+            <button className="primary" onClick={onSettings}>
+              {t.setupAction}
+            </button>
+          </div>
+        )}
         {status &&
+          !needsModel &&
           !chat.length &&
           !pending &&
           !status.draft &&
@@ -488,9 +501,8 @@ export default function Assistant({
           <textarea
             ref={composer}
             aria-label={t.question}
-            placeholder={
-              status && !savedModel.model ? t.setupModel : t.placeholder
-            }
+            placeholder={t.placeholder}
+            disabled={needsModel}
             rows={2}
             maxLength={2000}
             value={message}

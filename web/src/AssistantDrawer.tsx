@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ChevronLeft, LayoutDashboard, Settings, X } from "lucide-react";
+import { LayoutDashboard, Settings, X } from "lucide-react";
 import brain from "./assets/assistant-brain.png";
 import { assistantCopy } from "./assistant-copy";
 import "./Assistant.css";
@@ -16,6 +16,7 @@ const Assistant = lazy(() => import("./Assistant"));
 export type SettingsSection = "provider" | "scope" | "connect";
 export type AssistantControls = {
   openAssistant: () => void;
+  launcher: ReactNode;
   settings: ReactNode;
   settingsRequest: number;
 };
@@ -49,6 +50,11 @@ export function AssistantDrawer({
     setLoaded(true);
     if (!dialog.current?.open) showDrawer();
     setOpened(true);
+  }
+  function openSettings() {
+    dialog.current?.close();
+    onSettings?.();
+    setSettingsRequest((previous) => previous + 1);
   }
   const dashboardOpen = dashboards?.open;
   useEffect(() => {
@@ -88,21 +94,22 @@ export function AssistantDrawer({
     <>
       {children({
         openAssistant,
+        launcher: (
+          <button
+            className="quiet assistant-tab"
+            onClick={openAssistant}
+            title={t.title}
+            aria-label={t.title}
+            aria-haspopup="dialog"
+            aria-expanded={opened}
+            aria-controls="assistant-drawer"
+          >
+            <img src={brain} alt="" width="32" height="27" />
+          </button>
+        ),
         settings,
         settingsRequest,
       })}
-      <button
-        className="assistant-tab"
-        onClick={openAssistant}
-        title={t.title}
-        aria-label={t.title}
-        aria-haspopup="dialog"
-        aria-expanded={opened}
-        aria-controls="assistant-drawer"
-      >
-        <ChevronLeft size={13} />
-        <img src={brain} alt="" width="38" height="32" />
-      </button>
       <dialog
         id="assistant-drawer"
         className="assistant-drawer"
@@ -129,11 +136,7 @@ export function AssistantDrawer({
           <button
             aria-label={t.settings}
             title={t.settings}
-            onClick={() => {
-              dialog.current?.close();
-              onSettings?.();
-              setSettingsRequest((previous) => previous + 1);
-            }}
+            onClick={openSettings}
           >
             <Settings size={18} />
           </button>
@@ -154,6 +157,7 @@ export function AssistantDrawer({
               host={host}
               settingsRequest={settingsRequest}
               opened={opened}
+              onSettings={openSettings}
             />
           </Suspense>
         )}
