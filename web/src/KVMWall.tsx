@@ -87,6 +87,7 @@ function Tile({ deviceId }: Record<string, unknown>) {
     wasEnlarged.current = active;
   }, [board.enlarged, device.id]);
   const live = snapshot.phase === "live" || snapshot.phase === "no-signal";
+  const status = snapshot.phase === "no-signal" ? "No video" : snapshot.phase;
   return (
     <section
       className="widget-shell wall-tile"
@@ -161,11 +162,10 @@ function Tile({ deviceId }: Record<string, unknown>) {
         <div className="wall-tile-tools">
           <span
             role="status"
-            className={live ? "wall-live" : ""}
-            title={`${labels[entry.source]} · ${snapshot.phase}`}
-            aria-label={snapshot.phase}
+            className={snapshot.phase}
+            title={`${labels[entry.source]} · ${status}`}
           >
-            {snapshot.phase}
+            {status}
           </span>
           <button
             aria-label="Connect"

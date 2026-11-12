@@ -483,6 +483,10 @@ p {
   color: var(--accent);
   border-color: var(--accent);
 }
+.dashboard-actions button.primary {
+  width: auto;
+  padding-inline: 12px;
+}
 .widget-shell {
   height: 100%;
   display: flex;
@@ -1405,7 +1409,7 @@ dialog p {
     padding: 16px;
   }
   .tabs {
-    overflow-x: auto;
+    flex-wrap: wrap;
     gap: 0;
   }
   .tabs button {
@@ -2048,11 +2052,17 @@ input[role="switch"]:checked::before {
 .connection-status .online i {
   background: var(--accent);
 }
+.connection-status .no-signal i {
+  background: #ebc780;
+}
 .connection-status small {
   display: block;
   font-size: 9px;
   color: #9aafb9;
   margin: 0;
+}
+.connection-status .no-signal small {
+  color: #ebc780;
 }
 @media (max-width: 820px) {
   .topbar-tools {
@@ -2183,6 +2193,9 @@ input[role="switch"]:checked::before {
 .glances-setup {
   grid-column: 1 / -1;
   min-width: 0;
+}
+.telemetry-fields {
+  margin-inline: 0;
 }
 .settings-grid:has(.glances-setup[open]) {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
@@ -2481,10 +2494,13 @@ select {
     margin-left: 2px;
   }
   .wall-tile .wall-tile-tools {
-    gap: 4px;
+    display: grid;
+    grid-template-columns: repeat(3, auto);
+    gap: 1px 4px;
   }
   .wall-tile .wall-tile-tools [role="status"] {
-    max-width: 30px;
+    grid-column: 1 / -1;
+    justify-self: end;
   }
 }
 .wall-tile .widget-grip {
@@ -2534,13 +2550,13 @@ select {
 .wall-tile-tools [role="status"] {
   color: var(--muted);
   font-size: 10px;
-  max-width: 60px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.wall-tile-tools .wall-live[role="status"] {
+.wall-tile-tools .live[role="status"] {
   color: var(--accent);
+}
+.wall-tile-tools .no-signal[role="status"] {
+  color: #ebc780;
 }
 .wall-tile-tools button {
   padding: 5px;

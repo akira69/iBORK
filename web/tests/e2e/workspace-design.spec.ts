@@ -13,6 +13,16 @@ test("settings have the right header, compact fields and an expanded add-server 
   await expect(page.locator(".topbar h1")).toHaveText("iBORK Settings");
   await expect(page.locator(".topbar .connection-status")).toHaveCount(0);
   await expect(page.getByLabel("BMC address", { exact: true })).toBeVisible();
+  const address = page.getByLabel("BMC address", { exact: true });
+  const addressWidth = (await address.boundingBox())!.width;
+  for (const control of [
+    page.getByRole("textbox", { name: "Glances API origin", exact: true }),
+    page.getByRole("combobox", { name: "Power source", exact: true }),
+  ]) {
+    expect((await control.boundingBox())!.width).toBeGreaterThanOrEqual(
+      addressWidth,
+    );
+  }
   await expect(
     page.locator(".settings-grid .connection-settings h2 svg"),
   ).toHaveCount(1);

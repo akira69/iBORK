@@ -41,6 +41,7 @@ test("confirmed no-signal preserves deliberate keyboard wake control", async ({
 }) => {
   await setup(page, true, true, false);
   await expect(page.getByText("No HDMI signal", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("KVM: Connected · No video")).toBeVisible();
   const video = page.getByLabel("Remote server video and keyboard control");
   await video.click();
   await page.keyboard.press("a");
@@ -56,6 +57,16 @@ test("confirmed no-signal preserves deliberate keyboard wake control", async ({
   await expect(page.getByText("No HDMI signal", { exact: true })).toBeVisible();
   expect((await telemetry(page)).peers).toBe(1);
   expect((await telemetry(page)).closed).toBe(0);
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.getByRole("button", { name: "KVM Wall", exact: true }).click();
+  const tile = page.getByRole("region", { name: "Demo compute console tile" });
+  const status = tile.getByRole("status");
+  await expect(status).toHaveText("No video");
+  await tile.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await expect(status).toHaveText("disconnected");
+  expect(await status.evaluate((el) => el.scrollWidth)).toBeLessThanOrEqual(
+    await status.evaluate((el) => el.clientWidth),
+  );
 });
 
 test("settings disconnect the console while preserving its surface and layout", async ({

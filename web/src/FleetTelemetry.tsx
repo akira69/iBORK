@@ -389,18 +389,37 @@ export function FleetTelemetry({
                   { age, watts } = sampleStatus(read, elapsed);
                 const error = read?.error || read?.data?.error;
                 return (
-                  <tr key={d.id}>
-                    <th scope="row">{name(d.id)}</th>
-                    <td>{fmtWatts(watts)}</td>
-                    <td>
-                      {read?.data?.source ||
-                        (hasEnergy(d) ? "Awaiting source" : "No power source")}
-                      {error && <small>Collection: {error}</small>}
-                      {read?.data?.storageError && (
-                        <small>Storage: {read.data.storageError}</small>
-                      )}
+                  <tr key={d.id} role="row">
+                    <th scope="row" role="rowheader">
+                      {name(d.id)}
+                    </th>
+                    <td role="cell">
+                      <span className="fleet-cell-label" aria-hidden="true">
+                        Watts
+                      </span>
+                      {fmtWatts(watts)}
                     </td>
-                    <td>{age !== null && age >= 0 ? `${age} s` : "—"}</td>
+                    <td role="cell">
+                      <span className="fleet-cell-label" aria-hidden="true">
+                        Source
+                      </span>
+                      <span>
+                        {read?.data?.source ||
+                          (hasEnergy(d)
+                            ? "Awaiting source"
+                            : "No power source")}
+                        {error && <small>Collection: {error}</small>}
+                        {read?.data?.storageError && (
+                          <small>Storage: {read.data.storageError}</small>
+                        )}
+                      </span>
+                    </td>
+                    <td role="cell">
+                      <span className="fleet-cell-label" aria-hidden="true">
+                        Sample age
+                      </span>
+                      {age !== null && age >= 0 ? `${age} s` : "—"}
+                    </td>
                   </tr>
                 );
               })}
