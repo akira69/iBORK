@@ -25,8 +25,8 @@ function Chart({
 }) {
   const day = kind === "day";
   const width = paired ? 344 : 736;
-  const count = day ? 24 : 30;
   const values = snapshot?.[kind] ?? [];
+  const intervals = Math.max(1, values.length - 1);
   const peak = Math.max(1, ...values.map((v) => v ?? 0));
   const kwh = day ? snapshot?.dayKwh : snapshot?.monthKwh;
   const hours = day ? snapshot?.dayHours : snapshot?.monthHours;
@@ -34,10 +34,7 @@ function Chart({
   const points = values.map((v, i) =>
     v == null
       ? null
-      : [
-          Math.floor((width * i) / (count - 1)),
-          44 - Math.round((42 * v) / peak),
-        ],
+      : [Math.floor((width * i) / intervals), 44 - Math.round((42 * v) / peak)],
   );
   return (
     <section
@@ -48,7 +45,7 @@ function Chart({
       <strong>
         {kwh == null || rate == null ? "--" : `$${(kwh * rate).toFixed(2)}`}
       </strong>
-      <small>Avg W</small>
+      <small>{day ? "15 min avg W" : "6 hr avg W"}</small>
       <svg
         viewBox={`-2 0 ${width + 4} 48`}
         role="img"
@@ -68,11 +65,11 @@ function Chart({
               x2={p[0]}
               y2={p[1]}
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="1.5"
               strokeLinecap="round"
             />
           ) : (
-            <circle key={i} cx={p[0]} cy={p[1]} r="2" fill="currentColor" />
+            <circle key={i} cx={p[0]} cy={p[1]} r="1.5" fill="currentColor" />
           );
         })}
       </svg>
@@ -224,11 +221,7 @@ export function PanelLayoutPreview({
       if (key === "power")
         rows.push(
           <div key={key} className="cl-power">
-            <small>
-              {measured.length < metered
-                ? "Partial fleet power"
-                : "Fleet power"}
-            </small>
+            <small>Current fleet power</small>
             <strong>
               {measured.length
                 ? watts(measured.reduce((a, b) => a + b, 0))
@@ -242,7 +235,13 @@ export function PanelLayoutPreview({
                 : `$${snapshot.usdPerKwh.toFixed(4)}`}{" "}
               / kWh
             </b>
-            {snapshot && <em>{metered} metered</em>}
+            {snapshot && (
+              <em>
+                {metered
+                  ? `${measured.length}/${metered} reporting`
+                  : "No meters"}
+              </em>
+            )}
           </div>,
         );
       else if (key === "servers") rows.push(<div key={key}>{tiles()}</div>);

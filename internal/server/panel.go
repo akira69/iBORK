@@ -255,8 +255,8 @@ func (s *Server) panelSnapshot(now time.Time) map[string]any {
 		}
 		devices = append(devices, device)
 	}
-	day, dayKwh, dayHours := energy.FleetBuckets(series, now.Unix(), 24, 3600)
-	month, monthKwh, monthHours := energy.FleetBuckets(series, now.Unix(), 30, 86400)
+	day, dayKwh, dayHours := energy.FleetBuckets(series, now.Unix(), 24*4, 15*60)
+	month, monthKwh, monthHours := energy.FleetBuckets(series, now.Unix(), 30*4, 6*3600)
 	return map[string]any{
 		"home":            layout.Home,
 		"usdPerKwh":       s.currentRate().USDPerKwh,
