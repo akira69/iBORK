@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { setup } from "./fixtures";
 import { dell, rfbServer } from "./vnc-fixture";
 
-test("settings have the right header, compact fields and an expanded add-server card", async ({
+test("settings have the right header, compact fields and responsive card columns", async ({
   page,
 }) => {
   await setup(page, true, false);
@@ -26,8 +26,31 @@ test("settings have the right header, compact fields and an expanded add-server 
   await expect(
     page.locator(".settings-grid .connection-settings h2 svg"),
   ).toHaveCount(1);
-  for (const card of await page.locator(".settings-grid > .panel").all())
-    expect((await card.boundingBox())!.width).toBeLessThanOrEqual(561);
+  const cards = page.locator(".settings-grid > .panel");
+  for (const [width, columns] of [
+    [2560, 4],
+    [1920, 3],
+    [1440, 2],
+    [1000, 1],
+    [390, 1],
+  ]) {
+    await page.setViewportSize({ width, height: 1050 });
+    const boxes = await cards.evaluateAll((elements) =>
+      elements.map((element) => {
+        const { x, y, width } = element.getBoundingClientRect();
+        return { x, y, width };
+      }),
+    );
+    expect(boxes.filter((box) => box.y === boxes[0].y)).toHaveLength(columns);
+    for (const box of boxes) {
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+    }
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+  }
+  await page.setViewportSize({ width: 1920, height: 1050 });
   await page.screenshot({
     path: "test-results/screenshots/design/settings-after.png",
     fullPage: true,

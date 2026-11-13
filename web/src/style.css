@@ -1687,8 +1687,7 @@ dialog p {
 }
 .settings-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 560px));
-  max-width: 1140px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
   gap: 20px;
   align-items: start;
 }
@@ -2208,13 +2207,6 @@ input[role="switch"]:checked::before {
 }
 .telemetry-fields {
   margin-inline: 0;
-}
-.settings-grid:has(.glances-setup[open]) {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
-  max-width: none;
-}
-.connection-settings:has(.glances-setup[open]) {
-  grid-column: 1 / -1;
 }
 .glances-setup {
   border: 1px solid #36514b;

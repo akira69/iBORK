@@ -5,13 +5,18 @@ test("SSH setup generates a scoped command and applies the local origin without 
   page,
   context,
 }) => {
+  await page.setViewportSize({ width: 1920, height: 1050 });
   await setup(page, true, false);
   await page
     .getByRole("button", { name: "iBORK settings", exact: true })
     .first()
     .click();
   await page.getByLabel("Device type").selectOption("telemetry");
+  const card = page.locator(".connection-settings");
+  const cardWidth = (await card.boundingBox())!.width;
   await page.getByText("Connect Glances over SSH", { exact: true }).click();
+  await expect(page.getByLabel("Glances server IPv4 address")).toBeVisible();
+  expect((await card.boundingBox())!.width).toBe(cardWidth);
   const copy = page.getByRole("button", { name: "Copy: Start setup" });
   await expect(copy).toBeDisabled();
   await page.getByLabel("Glances server IPv4 address").fill("192.0.2.10;id");
@@ -37,14 +42,19 @@ test("SSH setup generates a scoped command and applies the local origin without 
   await pairing.fill("192.0.2.1 " + key);
   const panel = page.locator(".glances-setup");
   const columns = panel.locator(".glances-hosts section");
-  expect((await columns.first().boundingBox())!.y).toBe(
-    (await columns.last().boundingBox())!.y,
+  expect((await columns.last().boundingBox())!.y).toBeGreaterThan(
+    (await columns.first().boundingBox())!.y,
   );
   await panel.screenshot({
     path: "test-results/screenshots/glances-setup.png",
   });
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(await panel.evaluate((el) => el.scrollWidth)).toBeLessThanOrEqual(390);
+  expect(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+    true,
+  );
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
   await panel.screenshot({
     path: "test-results/screenshots/glances-mobile.png",
   });
