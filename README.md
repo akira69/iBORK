@@ -63,7 +63,7 @@ Messages and relevant device, sensor and layout context are sent to your configu
 
 The companion [ESP32 firmware](https://github.com/akira69/iBORK-ESP32) runs on the supported 800 × 480 CrowPanel. Pair it with iBORK, select servers and detail widgets under **Remote display**, and use the browser preview to check the layout.
 
-On the panel, **Settings → Display** offers a persistent 1–100% manual brightness slider and **Use schedule** to return to the shared daily schedule. Manual brightness works offline and affects only that panel. Supported power-on and graceful-shutdown requests require PIN confirmation. See [display provisioning and API](docs/panel-api.md) and the [operator guide](docs/usage.md) for details.
+On the panel, **Settings → Display** offers 10–100% manual brightness, a separate contrast slider, and clock controls. Choose **Use schedule** to return to the shared daily schedule. Supported power-on and graceful-shutdown requests require PIN confirmation. See the [touchscreen operator guide](docs/usage.md#touchscreen-display) and [display provisioning and API](docs/panel-api.md).
 
 ## Quick start
 
