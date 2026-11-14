@@ -110,23 +110,32 @@ Power controls can start, shut down, reset or cycle the server. **Boot** sets a 
 
 The Elecrow CrowPanel DIS08070H V3.0 uses an 800 × 480 landscape layout. A green Wi-Fi icon means the panel joined the network. A green server icon means fresh iBORK readings arrived. A red icon identifies the connection to check.
 
-Home shows fleet watts, estimated cost and reporting coverage over 24 hours and 30 days. Up to 12 server tiles show a short label and watts. Tap a tile for details, swipe up for more servers, or use the top-bar selector even when Home has no tiles. Opening a server requests fresh readings.
+Home shows fleet watts, estimated cost and reporting coverage over 24 hours and 30 days. Server tiles show a short label and watts. Tap a tile for details, swipe up for more servers, or use **Servers** in the header when Home hides the tiles. Opening a server requests fresh readings.
+
+**Offline - last readings** means the panel has lost its Wi-Fi connection and is showing cached readings. If the Wi-Fi icon is green but the server icon is red, check the connection to iBORK.
 
 ### Choose what appears
 
 In **iBORK settings → Remote display → Home**, show, hide or reorder fleet power, charts and tiles. Totals and cost cover the servers you include. Initially all servers are included. After customizing, add new servers in the editor.
 
-Under **Servers**, choose watts for a configured meter, temperatures and fans for IPMI or Glances, and PIN-protected controls for supported management connections. The preview uses the latest panel readings and leaves gaps where measurements are missing. Remote display shows when the panel last checked in and marks the connection stale after one minute. Select the preview palette that matches your touchscreen. Choose **Save layout** for paired panels to pick up changes on refresh.
+Under **Servers**, choose watts for a configured meter, temperatures and fans for IPMI or Glances, and PIN-protected controls for supported management connections. The preview uses the latest panel readings and leaves gaps where measurements are missing. Remote display shows when the panel last checked in and marks the connection stale after one minute. Choose **Save layout** for paired panels to pick up changes on refresh.
 
 In **Remote display → Display settings**, use **Copy sidebar icons to panel** after editing browser labels or artwork. Paired panels also pick up the shared electricity rate on their next successful poll. With an older server, the panel can show watts and kWh while cost is unavailable.
 
 ### Schedule the backlight
 
-Use **iBORK settings → Remote display → Display settings** or **Settings → Display → Edit schedule** on the panel. Set four local start times. Each period runs until the next, including across midnight. Normal uses full brightness, Dim accepts 1–99%, and Screen off keeps telemetry running with the backlight off.
+Use **iBORK settings → Remote display → Display settings** or **Settings → Display → Edit schedule** on the panel. Set four local start times. Each period runs until the next, including across midnight. **Normal** uses full brightness, **Dim** accepts 1–99%, and **Screen off** turns off the backlight and pauses panel polling until wake.
 
 The default schedule turns the screen off at 1 AM, dims to 25% at 5 AM, returns to full brightness at 7 AM and dims to 25% at 7 PM. In scheduled mode, the first touch wakes the screen and consumes the tap. The schedule resumes after five idle minutes. A paired panel requires its PIN to save schedule changes.
 
-The panel's **Display** page also has a 1–100% brightness slider. Manual brightness works offline and survives restarts until you tap **Use schedule**. It applies only to that panel and does not change the shared schedule.
+### Adjust appearance on the panel
+
+- **Settings → Display → Brightness** sets the backlight to 10–100%. The manual level works offline and survives restarts. Tap **Use schedule** to resume the shared schedule.
+- **Settings → Display → Contrast** adjusts the interface colors. At 0%, you see the theme's default contrast. Higher values darken the background and make secondary text and divider lines easier to see.
+- **Settings → Panel theme** previews eight palettes. Tap Teal, Amber, Ice, Crimson, Graphite, Forest, Ocean, or Copper to save it on that panel.
+- **Settings → Display → Clock settings** offers 24-hour, 12-hour with AM/PM, or Off. You can also choose the font, including Seven-segment, plus size, color, weight, and style. The clock uses the panel's local time and shows `--:--` until the time syncs.
+
+Brightness, contrast, theme, and clock preferences are local to each panel.
 
 ### Protect power actions
 
